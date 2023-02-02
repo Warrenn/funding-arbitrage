@@ -1,0 +1,25 @@
+{
+    // Use IntelliSense to learn about possible attributes.
+    // Hover to view descriptions of existing attributes.
+    // For more information, visit: https://go.microsoft.com/fwlink/?linkid=830387
+    "version": "0.2.0",
+    "configurations": [
+        {
+            "type": "node",
+            "request": "launch",
+            "name": "Launch Program",
+            "program": "${workspaceFolder}/src/index.ts",
+            "preLaunchTask": "tsc: build - tsconfig.json",
+            "env": {
+                "AWS_PROFILE": "busyweb_admin",
+                "AWS_SDK_LOAD_CONFIG": "true",
+                "AWS_ACCESS_KEY_ID": "",
+                "AWS_SECRET_ACCESS_KEY": ""
+            },
+            "outFiles": [
+                "${workspaceFolder}/out/**/*.js"
+            ],
+            "console": "internalConsole"
+        }
+    ]
+}

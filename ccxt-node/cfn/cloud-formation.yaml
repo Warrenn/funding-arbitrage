@@ -1,0 +1,242 @@
+AWSTemplateFormatVersion: "2010-09-09"
+
+Description: Template to deploy ccxt-node futures instance
+
+Metadata:
+  cfn-lint:
+    config:
+      ignore_checks:
+        - W1001
+        - E2507
+        - W3005
+        - E3002
+        - E3012
+
+Parameters:
+  VPCId:
+    Type: AWS::EC2::VPC::Id
+    Description: The ID of the VPC
+
+  SubnetId:
+    Type: AWS::EC2::Subnet::Id
+    Description: The ID of the subnet in the VPC
+
+  AmiId:
+    Description: The name of the AMI id to use for running the ccxt-node futures app
+    Type: "AWS::SSM::Parameter::Value<AWS::EC2::Image::Id>"
+    Default: "/aws/service/ami-amazon-linux-latest/amzn2-ami-hvm-x86_64-gp2"
+
+  InstanceType:
+    Description: The instance type the application will be using
+    Type: String
+    Default: t3.micro
+
+  S3ArtifactBucket:
+    Type: String
+    Description: The Bucket the deployment artifacts are stored
+    Default: secure-artifacts-93648082bbed41458cac8d7814803d3c
+
+  LogRetention:
+    Type: Number
+    Description: The number of days to keep the cloudwatch logs
+    Default: 3
+
+  AppPrefix:
+    Type: String
+    Description: The Prefix used generally by the application
+    Default: ccxt-node
+
+  EnvName:
+    Type: String
+    Description: The environment name
+    Default: live
+
+  Region:
+    Type: String
+    Description: The AWS Region for resources
+    Default: af-south-1
+
+Resources:
+  SecurityGroup:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupDescription: Disable all ingress access
+      SecurityGroupEgress:
+        - IpProtocol: -1
+          CidrIp: "0.0.0.0/0"
+      VpcId: !Ref VPCId
+
+  AutoScalingGroup:
+    Type: AWS::AutoScaling::AutoScalingGroup
+    Properties:
+      MaxSize: "1"
+      MinSize: "0"
+      DesiredCapacity: "1"
+      VPCZoneIdentifier:
+        - !Ref SubnetId
+      LaunchTemplate:
+        LaunchTemplateId: !Ref LaunchTemplate
+        Version: !GetAtt LaunchTemplate.LatestVersionNumber
+
+  InstanceProfile:
+    Type: AWS::IAM::InstanceProfile
+    Properties:
+      Path: /
+      Roles:
+        - !Ref InstanceRole
+
+  InstanceRole:
+    Type: AWS::IAM::Role
+    Properties:
+      RoleName: ccxt-node-role
+      Path: /
+      AssumeRolePolicyDocument:
+        Version: 2012-10-17
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service:
+                - ec2.amazonaws.com
+            Action:
+              - sts:AssumeRole
+      ManagedPolicyArns:
+        - arn:aws:iam::aws:policy/AmazonSSMManagedInstanceCore
+      Policies:
+        - PolicyName: ccxt-node-role-policy
+          PolicyDocument:
+            Version: 2012-10-17
+            Statement:
+              - Effect: Allow
+                Action:
+                  - logs:CreateLogGroup
+                  - logs:CreateLogStream
+                  - logs:PutLogEvents
+                  - logs:DescribeLogGroups
+                  - logs:DescribeLogStreams
+                Resource: arn:aws:logs:*:*:*
+              - Effect: Allow
+                Action:
+                  - autoscaling:*
+                  - cloudwatch:*
+                  - ec2:Describe*
+                Resource: "*"
+              - Effect: Allow
+                Action:
+                  - S3:Get*
+                Resource: !Sub "arn:aws:s3:::${S3ArtifactBucket}/${AppPrefix}/*"
+              - Effect: Allow
+                Action:
+                  - ssm:GetParametersByPath
+                  - ssm:GetParameters
+                  - ssm:GetParameter
+                  - ssm:ListTagsForResource
+                Resource:
+                  - arn:aws:ssm:*:*:parameter/AmazonCloudWatch-*
+                  - !Sub "arn:aws:ssm:*:*:parameter/${EnvName}/${AppPrefix}/*"
+                  - !Sub "arn:aws:ssm:*:*:parameter/${EnvName}/${AppPrefix}"
+              - Effect: Allow
+                Action:
+                  - kms:Decrypt
+                Resource:
+                  - arn:aws:kms:*:*:key/alias/aws/ssm
+
+  LaunchTemplate:
+    Type: AWS::EC2::LaunchTemplate
+    Properties:
+      LaunchTemplateName: ccxt-node-launch-template
+      LaunchTemplateData:
+        InstanceType: !Ref InstanceType
+        ImageId: !Ref AmiId
+        IamInstanceProfile:
+          Arn: !GetAtt InstanceProfile.Arn
+        TagSpecifications:
+          - ResourceType: instance
+            Tags:
+              - Key: "Name"
+                Value: !Sub "${AppPrefix}-instance"
+              - Key: "env"
+                Value: !Ref EnvName
+        NetworkInterfaces:
+          - DeviceIndex: 0
+            AssociatePublicIpAddress: true
+            SubnetId: !Ref SubnetId
+            Groups:
+              - !Ref SecurityGroup
+            DeleteOnTermination: true
+        UserData:
+          Fn::Base64: !Sub |
+            #!/bin/bash -x
+
+            yum update -y
+            yum install -y amazon-cloudwatch-agent
+
+            curl -o- https://raw.githubusercontent.com/nvm-sh/nvm/v0.34.0/install.sh | bash
+            export NVM_DIR="$HOME/.nvm"
+            [ -s "$NVM_DIR/nvm.sh" ] && \. "$NVM_DIR/nvm.sh"  # This loads nvm
+            [ -s "$NVM_DIR/bash_completion" ] && \. "$NVM_DIR/bash_completion"  # This loads nvm bash_completion
+
+            nvm install 16
+
+            export BYBIT_REGION="${Region}"
+            export BYBIT_API_CREDENTIALS="/${EnvName}/${AppPrefix}/api-credentials"
+            export BYBIT_SETTINGS="/${EnvName}/${AppPrefix}/settings"
+
+            mkdir /logs
+            chmod 665 /logs
+
+            mkdir /app
+            chmod 577 /app
+
+            cat <<EOF > ccxt-node.conf
+              /logs/application.log {
+                rotate 1
+                daily
+                create 660 ec2-user ec2-user
+              }
+            EOF
+
+            cp ccxt-node.conf /etc/logrotate.d/
+            chmod 644 /etc/logrotate.d/ccxt-node.conf
+            chown root.root /etc/logrotate.d/ccxt-node.conf
+
+            cat <<EOF > /opt/aws/amazon-cloudwatch-agent/etc/amazon-cloudwatch-agent-schema.json
+              {
+                "agent": {
+                  "run_as_user": "root"
+                },
+                "logs": {
+                  "logs_collected": {
+                    "files": {
+                      "collect_list": [
+                        {
+                          "file_path": "/logs/*",
+                          "log_group_name": "${AppPrefix}-application",
+                          "log_stream_name": "{instance_id}"
+                        }                      
+                      ]
+                    }
+                  }
+                }
+              }
+            EOF
+
+            /opt/aws/amazon-cloudwatch-agent/bin/amazon-cloudwatch-agent-ctl -a fetch-config -m ec2 -s -c file:/opt/aws/amazon-cloudwatch-agent/etc/amazon-cloudwatch-agent-schema.json
+            systemctl restart amazon-cloudwatch-agent
+
+            pushd /app
+            aws s3 cp s3://${S3ArtifactBucket}/${AppPrefix}/${AppPrefix}-application.zip /app/${AppPrefix}-application.zip --region ${Region}
+            unzip /app/${AppPrefix}-application.zip -d /app
+            npm install 
+            node index.js > /logs/application.log 2>&1
+
+  ApplicationLog:
+    Type: AWS::Logs::LogGroup
+    DeletionPolicy: Delete
+    UpdateReplacePolicy: Delete
+    Properties:
+      LogGroupName: !Sub "${AppPrefix}-application"
+      RetentionInDays: !Ref LogRetention
+
+Outputs:
+  ScalingGroup:
+    Value: !Ref AutoScalingGroup
