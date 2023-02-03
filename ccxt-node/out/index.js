@@ -25,16 +25,24 @@ let bybitEx = new ccxt.pro.bybit({
         'recvWindow': 59999
     },
     apiKey: bybitCred.key,
-    enableRateLimit: true
+    enableRateLimit: true,
 });
 let coinEx = new ccxt.pro.coinex({
     apiKey: coinexCred.key,
     secret: coinexCred.secret,
-    enableRateLimit: true
+    enableRateLimit: true,
+    options: {
+        createOrderparams: {
+            "option": "1",
+            "effectType": 4
+        },
+        fetchOrderBookLimit: 5
+    }
 });
 let symbol = 'RNDR/USDT:USDT';
 //await bybitEx.loadMarkets();
 await coinEx.loadMarkets();
+let exchange = coinEx;
 // console.log(mrks);
 // let bOb = await bybitEx.fetchOrderBook(symbol, 5);
 // let bPrice = (bOb.asks[0][0] + bOb.bids[0][0]) / 2;
@@ -50,15 +58,15 @@ await coinEx.loadMarkets();
 // let size = 1;
 // let exMakerParams = {};
 // let spreadRatioLimit = 3;
-async function createOrder({ exchange, obLimit, side, size, params }) {
+async function createOrder({ exchange, symbol, side, size }) {
     while (true) {
         let order = null;
         try {
-            let ob = await coinEx.fetchOrderBook(symbol, obLimit);
+            let ob = await coinEx.fetchOrderBook(symbol, exchange.options.fetchOrderBookLimit);
             let bestBid = ob.bids[0][0];
             let bestAsk = ob.asks[0][0];
             let price = (bestBid + bestAsk) / 2;
-            order = await exchange.createLimitOrder(symbol, side, size, price, params);
+            order = await exchange.createLimitOrder(symbol, side, size, price, exchange.options.createOrderparams);
             if (!(order === null || order === void 0 ? void 0 : order.id))
                 continue;
             order = await exchange.fetchOrder(order.id, symbol);
@@ -77,15 +85,14 @@ async function trailOrder({ exchange, orderId, symbol, trailPct }) {
             if (order.status == 'closed') {
                 return;
             }
-            let ob = await exchange.fetchOrderBook(order.symbol, 5);
+            let ob = await exchange.fetchOrderBook(order.symbol, exchange.options.fetchOrderBookLimit);
             let bestBid = ob.bids[0][0];
             let bestAsk = ob.asks[0][0];
-            let price = (bestBid + bestAsk) / 2;
-            if ((order.side == 'buy' && price < (order.price * (1 + trailPct))) ||
-                (order.side == 'sell' && price > (order.price * (1 - trailPct))))
+            if ((order.side == 'buy' && bestAsk < (order.price * (1 + trailPct))) ||
+                (order.side == 'sell' && bestBid > (order.price * (1 - trailPct))))
                 continue;
-            console.log(`${order.side} was ${order.price} will now be ${price}`);
-            order = await exchange.editOrder(orderId, symbol, order.type, order.side, order.amount, price);
+            let newPrice = order.side == 'buy' ? bestAsk * (1 - trailPct) : bestBid * (1 + trailPct);
+            order = await exchange.editOrder(orderId, symbol, order.type, order.side, order.amount, newPrice);
             if (order.id != orderId)
                 orderId = order.id;
         }
@@ -98,10 +105,15 @@ async function trailOrder({ exchange, orderId, symbol, trailPct }) {
         }
     }
 }
-let order = await createOrder({ exchange: coinEx, side: 'sell', size: 10, obLimit: 5, params: { "option": 1 } });
-await trailOrder({ exchange: coinEx, orderId: `${order === null || order === void 0 ? void 0 : order.id}`, symbol, trailPct: 0.0001 });
+//let order = await createOrder({ exchange, symbol, side: 'sell', size: 10, params: exchange.options.params });
+//await trailOrder({ exchange, orderId: `${order?.id}`, symbol, trailPct: 0.0001 });
 let position = await coinEx.fetchPosition(symbol);
-console.log(position);
+console.log(position.liquidationPrice);
+console.log(position.averageEntryPrice);
+let m = exchange.market(symbol);
+console.log(m);
+//remember to check limits before placing an order
+//get leverage  and set leverage
 //get the entry value diff for the positions
 //get the liquidation price from position
 //for the buy exchange place a sell at liquidation of buy position
