@@ -12,7 +12,6 @@ const
     apiCredentialsKeyPrefix = `${process.env.API_CRED_KEY_PREFIX}`,
     region = `${process.env.CCXT_NODE_REGION}`;
 
-
 let ssm = new AWS.SSM({ region });
 
 async function getCredentials({ ssm, name }: { ssm: AWS.SSM, name: string }): Promise<any> {
@@ -23,7 +22,7 @@ async function getCredentials({ ssm, name }: { ssm: AWS.SSM, name: string }): Pr
 let factory: { [key: string]: ExchangeFactory } = {
     "binance": async ({ ssm }) => {
         let credentials = await getCredentials({ ssm, name: "binance" });
-        return new ccxt.pro.binance({
+        return new ccxt.pro.binanceusdm({
             secret: credentials.secret,
             apiKey: credentials.key,
             enableRateLimit: true,
@@ -54,8 +53,8 @@ let factory: { [key: string]: ExchangeFactory } = {
             enableRateLimit: true
         });
     },
-    "gateio": async ({ ssm }) => {
-        let credentials = await getCredentials({ ssm, name: "gateio" });
+    "gate": async ({ ssm }) => {
+        let credentials = await getCredentials({ ssm, name: "gate" });
         return new ccxt.pro.gateio({
             secret: credentials.secret,
             apiKey: credentials.key,
@@ -74,12 +73,23 @@ let factory: { [key: string]: ExchangeFactory } = {
     }
 }
 
-let symbol = 'ETH/USDT:USDT'
+let symbol = 'XRP/USDT:USDT'
+let size = 50;
+let ignore: string[] = [];
 
-//await bybitEx.loadMarkets();
-await coinEx.loadMarkets();
-
-let exchange: ExchangePro = coinEx;
+let factoryKeys = Object.keys(factory);
+for (let k = 0; k < factoryKeys.length; k++) {
+    let key = factoryKeys[k];
+    if (ignore.indexOf(key) > -1) continue;
+    let func = factory[key];
+    let exchange = await func({ ssm });
+    let markets = await exchange.loadMarkets();
+    let order = await createLimitOrder({ exchange, side: "sell", symbol, size });
+    await trailOrder({ exchange, orderId: `${order.id}`, symbol, trailPct: 0.005 });
+    let [position] = await exchange.fetchPositions([symbol]);
+    let slOrder = await createLimitOrder({ exchange, side: 'buy', symbol, size, price: position.liquidationPrice * 0.95, stopLossPrice: position.liquidationPrice * 0.9, positionId: position.id });
+    let tpOrder = await createLimitOrder({ exchange, side: 'buy', symbol, size, price: position.averageEntryPrice * 1.05, takeProfitPrice: position.averageEntryPrice * 1.1, positionId: position.id });
+}
 
 //trigger take profit maker only
 //trigger stop loss maker only
@@ -108,15 +118,35 @@ async function createLimitOrder({
     symbol,
     side,
     size,
-    getPrice = null
+    price = undefined,
+    getPrice = undefined,
+    reduceOnly = false,
+    stopLossPrice = undefined,
+    takeProfitPrice = undefined,
+    positionId = undefined
 }: {
     exchange: ExchangePro,
     symbol: string,
     side: "buy" | "sell",
     size: number,
-    getPrice: GetPriceFunction | null
+    getPrice?: GetPriceFunction,
+    reduceOnly?: boolean,
+    stopLossPrice?: number,
+    takeProfitPrice?: number,
+    price?: number,
+    positionId?: string
 }): Promise<ccxt.Order> {
-    getPrice = getPrice || (({ side: s, bid: b, ask: a }) => s == 'buy' ? b : a)
+
+    let params: any = { type: 'limit', postOnly: true };
+
+    if (reduceOnly) params['reduceOnly'] = true;
+    if (stopLossPrice || takeProfitPrice) params['reduceOnly'] = true;
+    if (stopLossPrice) params['stopLossPrice'] = stopLossPrice;
+    if (takeProfitPrice) params['takeProfitPrice'] = takeProfitPrice;
+    if (positionId) params['positionId'] = positionId;
+    if (price) getPrice = ({ }) => price;
+    if (getPrice == undefined) getPrice = ({ side: s, bid: b, ask: a }) => s == 'buy' ? b : a;
+
     while (true) {
         let order: ccxt.Order | null = null;
         try {
@@ -124,10 +154,11 @@ async function createLimitOrder({
             let bestBid = ob.bids[0][0];
             let bestAsk = ob.asks[0][0];
             let price = getPrice({ side: side, bid: bestBid, ask: bestAsk });
-            order = await exchange.createLimitOrder(symbol, side, size, price, { type: 'limit', postOnly: true });
+            order = await exchange.createLimitOrder(symbol, side, size, price, params);
             if (!order?.id) continue;
             order = await exchange.fetchOrder(order.id, symbol);
-            if (order.status != 'canceled') return order;
+            if (order.status == 'open')
+                return order;
         }
         catch (error) {
             console.log(error);
@@ -156,8 +187,9 @@ async function trailOrder({
             let bestBid = ob.bids[0][0];
             let bestAsk = ob.asks[0][0];
 
-            if ((order.side == 'buy' && bestAsk < (order.price * (1 + trailPct))) ||
-                (order.side == 'sell' && bestBid > (order.price * (1 - trailPct)))) continue;
+            if (order.side == 'buy' && bestAsk < (order.price * (1 + trailPct))) continue
+            if (order.side == 'sell' && bestBid > (order.price * (1 - trailPct))) continue;
+
             let newPrice = order.side == 'buy' ? bestBid * (1 - trailPct) : bestAsk * (1 + trailPct);
             order = await exchange.editOrder(orderId, symbol, order.type, order.side, order.amount, newPrice);
             if (order.id != orderId) orderId = order.id;
@@ -246,19 +278,13 @@ async function arbritage({
 //get direction first then trail in that direction until order is closed
 //place in opposite direction and trail until order is closed
 
-//limit on size as it relates to leverage 
+//limit on size as it relates to leverage
 //limit on max size per order to place
 //limit on total position as it relates to risk limit
 //use the correction to market as a guide
 //let order = await createOrder({ exchange, symbol, side: 'sell', size: 10, params: exchange.options.params });
 //await trailOrder({ exchange, orderId: `${order?.id}`, symbol, trailPct: 0.0001 });
 
-let position = await coinEx.fetchPosition(symbol);
-console.log(position.liquidationPrice);
-console.log(position.averageEntryPrice);
-
-let m = exchange.market(symbol);
-console.log(m);
 
 //remember to check limits before placing an order
 //get leverage  and set leverage
