@@ -2,6 +2,46 @@ import ccxt from 'ccxt';
 import AWS from 'aws-sdk';
 import dotenv from "dotenv";
 dotenv.config({ override: true });
+class okx2 extends ccxt.pro.okex {
+    async createLimitOrder(symbol, side, amount, price, params) {
+        if (((params === null || params === void 0 ? void 0 : params.takeProfitPrice) || (params === null || params === void 0 ? void 0 : params.stopLossPrice)))
+            delete params.postOnly;
+        return await super.createLimitOrder(symbol, side, amount, price, params);
+    }
+    async fetchOrder(id, symbol, params) {
+        let openParams = { ordType: 'conditional', algoId: id };
+        const clientOrderId = this.safeString2(params, 'clOrdId', 'clientOrderId');
+        if (clientOrderId)
+            openParams['clOrdId'] = clientOrderId;
+        try {
+            let orders = await this.fetchOpenOrders(symbol, undefined, 1, openParams);
+            if (orders.length == 1)
+                return orders[0];
+        }
+        catch (err) {
+            console.log(err);
+        }
+        try {
+            openParams.ordType = "trigger";
+            let orders = await this.fetchOpenOrders(symbol, undefined, 1, openParams);
+            if (orders.length == 1)
+                return orders[0];
+        }
+        catch (err) {
+            console.log(err);
+        }
+        try {
+            delete openParams.ordType;
+            let orders = await this.fetchOpenOrders(symbol, undefined, 1, openParams);
+            if (orders.length == 1)
+                return orders[0];
+        }
+        catch (err) {
+            console.log(err);
+        }
+        return {};
+    }
+}
 const apiCredentialsKeyPrefix = `${process.env.API_CRED_KEY_PREFIX}`, region = `${process.env.CCXT_NODE_REGION}`;
 let ssm = new AWS.SSM({ region });
 async function getCredentials({ ssm, name }) {
@@ -21,7 +61,7 @@ let factory = {
     },
     "okx": async ({ ssm }) => {
         let credentials = await getCredentials({ ssm, name: "okx" });
-        return new ccxt.pro.okex({
+        return new okx2({
             secret: credentials.secret,
             apiKey: credentials.key,
             password: credentials.password,
@@ -63,8 +103,8 @@ let factory = {
     }
 };
 let symbol = 'XRP/USDT:USDT';
-let size = 50;
-let ignore = []; //["binance"];
+let positionSize = 100;
+let ignore = ["binance"];
 let factoryKeys = Object.keys(factory);
 for (let k = 0; k < factoryKeys.length; k++) {
     let key = factoryKeys[k];
@@ -73,13 +113,17 @@ for (let k = 0; k < factoryKeys.length; k++) {
     let func = factory[key];
     let exchange = await func({ ssm });
     let markets = await exchange.loadMarkets();
+    let contractSize = markets[symbol].contractSize;
+    let size = positionSize;
+    if (contractSize)
+        size = positionSize / contractSize;
     // let order = await createLimitOrder({ exchange, side: "sell", symbol, size });
     // await trailOrder({ exchange, orderId: `${order.id}`, symbol, trailPct: 0.0005 });
     let [position] = await exchange.fetchPositions([symbol]);
     // let slOrder = await createLimitOrder({ exchange, side: 'buy', symbol, size, price: position.liquidationPrice * 0.93, stopLossPrice: position.liquidationPrice * 0.9, positionId: position.id });
     // let tpOrder = await createLimitOrder({ exchange, side: 'buy', symbol, size, price: position.entryPrice * 0.7, takeProfitPrice: position.entryPrice * 0.73, positionId: position.id });
     let closeOrder = await createLimitOrder({ exchange, side: "buy", symbol, size, reduceOnly: true, getPrice: ({ bid }) => Math.min(bid * 0.998, position.entryPrice * 0.998) });
-    break;
+    //break;
 }
 //trigger take profit maker only
 //trigger stop loss maker only
@@ -128,7 +172,7 @@ async function createLimitOrder({ exchange, symbol, side, size, price = undefine
             order = await exchange.createLimitOrder(symbol, side, size, price, params);
             if (!(order === null || order === void 0 ? void 0 : order.id))
                 continue;
-            order = await exchange.fetchOrder(order.id, symbol);
+            order = await exchange.fetchOrder(order.id, symbol, { clientOrderId: order.clientOrderId });
             if (order.status == 'open')
                 return order;
         }
