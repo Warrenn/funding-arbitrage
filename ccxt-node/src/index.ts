@@ -22,7 +22,7 @@ async function getCredentials({ ssm, name }: { ssm: AWS.SSM, name: string }): Pr
 let factory: { [key: string]: ExchangeFactory } = {
     "binance": async ({ ssm }) => {
         let credentials = await getCredentials({ ssm, name: "binance" });
-        return new ccxt.pro.binanceusdm({
+        return new ccxt.pro.binance({
             secret: credentials.secret,
             apiKey: credentials.key,
             enableRateLimit: true,
@@ -75,7 +75,7 @@ let factory: { [key: string]: ExchangeFactory } = {
 
 let symbol = 'XRP/USDT:USDT'
 let size = 50;
-let ignore: string[] = [];
+let ignore: string[] = ["binance"];
 
 let factoryKeys = Object.keys(factory);
 for (let k = 0; k < factoryKeys.length; k++) {
@@ -85,10 +85,12 @@ for (let k = 0; k < factoryKeys.length; k++) {
     let exchange = await func({ ssm });
     let markets = await exchange.loadMarkets();
     let order = await createLimitOrder({ exchange, side: "sell", symbol, size });
-    await trailOrder({ exchange, orderId: `${order.id}`, symbol, trailPct: 0.005 });
+    await trailOrder({ exchange, orderId: `${order.id}`, symbol, trailPct: 0.0005 });
     let [position] = await exchange.fetchPositions([symbol]);
-    let slOrder = await createLimitOrder({ exchange, side: 'buy', symbol, size, price: position.liquidationPrice * 0.95, stopLossPrice: position.liquidationPrice * 0.9, positionId: position.id });
-    let tpOrder = await createLimitOrder({ exchange, side: 'buy', symbol, size, price: position.averageEntryPrice * 1.05, takeProfitPrice: position.averageEntryPrice * 1.1, positionId: position.id });
+    let slOrder = await createLimitOrder({ exchange, side: 'buy', symbol, size, price: position.liquidationPrice * 0.93, stopLossPrice: position.liquidationPrice * 0.9, positionId: position.id });
+    let tpOrder = await createLimitOrder({ exchange, side: 'buy', symbol, size, price: position.entryPrice * 0.7, takeProfitPrice: position.entryPrice * 0.73, positionId: position.id });
+    let closeOrder = await createLimitOrder({ exchange, side: "buy", symbol, size, reduceOnly: true, getPrice: ({ bid }) => Math.min(bid * 0.998, position.entryPrice * 0.998) });
+    break;
 }
 
 //trigger take profit maker only
@@ -123,7 +125,8 @@ async function createLimitOrder({
     reduceOnly = false,
     stopLossPrice = undefined,
     takeProfitPrice = undefined,
-    positionId = undefined
+    positionId = undefined,
+    settings = { retryLimit: 3 }
 }: {
     exchange: ExchangePro,
     symbol: string,
@@ -134,7 +137,8 @@ async function createLimitOrder({
     stopLossPrice?: number,
     takeProfitPrice?: number,
     price?: number,
-    positionId?: string
+    positionId?: string,
+    settings?: { retryLimit: number }
 }): Promise<ccxt.Order> {
 
     let params: any = { type: 'limit', postOnly: true };
@@ -146,9 +150,11 @@ async function createLimitOrder({
     if (positionId) params['positionId'] = positionId;
     if (price) getPrice = ({ }) => price;
     if (getPrice == undefined) getPrice = ({ side: s, bid: b, ask: a }) => s == 'buy' ? b : a;
+    if (settings) settings = { ...{ retryLimit: 3 }, ...settings };
 
     while (true) {
         let order: ccxt.Order | null = null;
+        let retryCount = 0;
         try {
             let ob = await exchange.fetchOrderBook(symbol, exchange.options.fetchOrderBookLimit);
             let bestBid = ob.bids[0][0];
@@ -161,7 +167,9 @@ async function createLimitOrder({
                 return order;
         }
         catch (error) {
+            retryCount++;
             console.log(error);
+            if (retryCount > (settings?.retryLimit || 3)) throw error;
         }
     }
 }
@@ -170,19 +178,24 @@ async function trailOrder({
     exchange,
     orderId,
     symbol,
-    trailPct
+    trailPct,
+    settings = { retryLimit: 3 }
 }: {
     exchange: ExchangePro,
     orderId: string,
     symbol: string,
-    trailPct: number
+    trailPct: number,
+    settings?: { retryLimit: number }
 }) {
+    if (settings) settings = { ...{ retryLimit: 3 }, ...settings };
+
     while (true) {
+        let retryCount = 0;
         try {
             let order = await exchange.fetchOrder(orderId, symbol);
-            if (order.status == 'closed') {
+            if (order.status == 'closed' || order.status == 'canceled')
                 return;
-            }
+
             let ob = await exchange.fetchOrderBook(order.symbol, exchange.options.fetchOrderBookLimit);
             let bestBid = ob.bids[0][0];
             let bestAsk = ob.asks[0][0];
@@ -191,13 +204,16 @@ async function trailOrder({
             if (order.side == 'sell' && bestBid > (order.price * (1 - trailPct))) continue;
 
             let newPrice = order.side == 'buy' ? bestBid * (1 - trailPct) : bestAsk * (1 + trailPct);
-            order = await exchange.editOrder(orderId, symbol, order.type, order.side, order.amount, newPrice);
+            await exchange.cancelOrder(orderId, symbol);
+            order = await createLimitOrder({ exchange, side: order.side, price: newPrice, size: order.amount, symbol })
             if (order.id != orderId) orderId = order.id;
         }
         catch (error: any) {
+            retryCount++;
             console.log(error);
             if (error.name == "ExchangeError" && error.message == "order not exists") return;
             if (error.name == "OrderNotFound" && error.message == "Order not found") return;
+            if (retryCount > (settings?.retryLimit || 3)) return;
         }
     }
 }
@@ -233,21 +249,21 @@ async function arbritage({
     //     trailOrder({ exchange: buyExchange, orderId: `${buyOrder.id}`, symbol, trailPct: settings.trailPct })
     // ]);
 
-    let shortPosition = await shortExchange.fetchPosition(symbol);
-    let longPosition = await longExchange.fetchPosition(symbol);
+    let [shortPosition] = await shortExchange.fetchPositions([symbol]);
+    let [longPosition] = await longExchange.fetchPositions([symbol]);
 
-    let priceDiff = Math.abs(shortPosition.averageEntryPrice - longPosition.averageEntryPrice);
+    let priceDiff = Math.abs(shortPosition.entryPrice - longPosition.entryPrice);
     let shortSLTrigger = shortPosition.liquidationPrice * (1 - (settings.liqLimitPct + settings.liqTriggerDiffPct));
     let shortSLLimit = shortPosition.liquidationPrice * (1 - settings.liqLimitPct);
 
     let longSLTrigger = longPosition.liquidationPrice * (1 + (settings.liqLimitPct + settings.liqTriggerDiffPct));
     let longSLLimit = longPosition.liquidationPrice * (1 + settings.liqLimitPct);
 
-    let shortTPTrigger = longSLTrigger + ((shortPosition.averageEntryPrice > longPosition.averageEntryPrice) ? priceDiff : priceDiff * -1);
-    let longTPTrigger = shortSLTrigger + ((shortPosition.averageEntryPrice > longPosition.averageEntryPrice) ? priceDiff * -1 : priceDiff);
+    let shortTPTrigger = longSLTrigger + ((shortPosition.entryPrice > longPosition.entryPrice) ? priceDiff : priceDiff * -1);
+    let longTPTrigger = shortSLTrigger + ((shortPosition.entryPrice > longPosition.entryPrice) ? priceDiff * -1 : priceDiff);
 
-    let shortTPLimit = longSLLimit + ((shortPosition.averageEntryPrice > longPosition.averageEntryPrice) ? priceDiff : priceDiff * -1);
-    let longTPLimit = shortSLLimit + ((shortPosition.averageEntryPrice > longPosition.averageEntryPrice) ? priceDiff : priceDiff * -1);
+    let shortTPLimit = longSLLimit + ((shortPosition.entryPrice > longPosition.entryPrice) ? priceDiff : priceDiff * -1);
+    let longTPLimit = shortSLLimit + ((shortPosition.entryPrice > longPosition.entryPrice) ? priceDiff : priceDiff * -1);
 
     //Place the short stop loss
     //place the short take profit
@@ -256,9 +272,9 @@ async function arbritage({
 
     //await until the funding date time
     //await until the market is not volatile
-    [shortPosition, longPosition] = await Promise.all([
-        shortExchange.fetchPosition(symbol),
-        longExchange.fetchPosition(symbol)
+    [[shortPosition], [longPosition]] = await Promise.all([
+        shortExchange.fetchPositions([symbol]),
+        longExchange.fetchPositions([symbol])
     ]);
 
     let pnLDiff = Math.abs(shortPosition.uPnL - longPosition.uPnL) / 2;
