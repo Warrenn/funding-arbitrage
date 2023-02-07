@@ -2,6 +2,37 @@ import ccxt from 'ccxt';
 import AWS from 'aws-sdk';
 import dotenv from "dotenv";
 dotenv.config({ override: true });
+class coinex2 extends ccxt.pro.coinex {
+    async createOrder(symbol, type, side, amount, price, params) {
+        if (params === null || params === void 0 ? void 0 : params.reduceOnly) {
+            params === null || params === void 0 ? true : delete params.reduceOnly;
+        }
+        return await this.createOrder(symbol, type, side, amount, price);
+    }
+}
+class binance2 extends ccxt.pro.binance {
+    async fetchPosition(symbol, params) {
+        let [position] = await super.fetchPositions([symbol], params);
+        return position;
+    }
+}
+class gate2 extends ccxt.pro.gateio {
+    async fetchOrder(id, symbol, params) {
+        try {
+            let order = await super.fetchOrder(id, symbol, params);
+            if (order)
+                return order;
+        }
+        catch (error) {
+            console.log(error);
+        }
+        return await super.fetchOrder(id, symbol, Object.assign(Object.assign({}, params), { stop: true }));
+    }
+    async fetchPosition(symbol, params) {
+        let [position] = await super.fetchPositions([symbol], params);
+        return position;
+    }
+}
 class okx2 extends ccxt.pro.okex {
     async createLimitOrder(symbol, side, amount, price, params) {
         if (((params === null || params === void 0 ? void 0 : params.takeProfitPrice) || (params === null || params === void 0 ? void 0 : params.stopLossPrice)))
@@ -39,7 +70,7 @@ class okx2 extends ccxt.pro.okex {
         catch (err) {
             console.log(err);
         }
-        return {};
+        return await super.fetchOrder(id, symbol, params);
     }
 }
 const apiCredentialsKeyPrefix = `${process.env.API_CRED_KEY_PREFIX}`, region = `${process.env.CCXT_NODE_REGION}`;
@@ -52,7 +83,7 @@ async function getCredentials({ ssm, name }) {
 let factory = {
     "binance": async ({ ssm }) => {
         let credentials = await getCredentials({ ssm, name: "binance" });
-        return new ccxt.pro.binance({
+        return new binance2({
             secret: credentials.secret,
             apiKey: credentials.key,
             enableRateLimit: true,
@@ -85,7 +116,7 @@ let factory = {
     },
     "gate": async ({ ssm }) => {
         let credentials = await getCredentials({ ssm, name: "gate" });
-        return new ccxt.pro.gateio({
+        return new gate2({
             secret: credentials.secret,
             apiKey: credentials.key,
             enableRateLimit: true,
@@ -104,7 +135,7 @@ let factory = {
 };
 let symbol = 'XRP/USDT:USDT';
 let positionSize = 100;
-let ignore = ["binance"];
+let ignore = ["binance", "okx", "bybit", "gate"];
 let factoryKeys = Object.keys(factory);
 for (let k = 0; k < factoryKeys.length; k++) {
     let key = factoryKeys[k];
@@ -117,14 +148,22 @@ for (let k = 0; k < factoryKeys.length; k++) {
     let size = positionSize;
     if (contractSize)
         size = positionSize / contractSize;
-    // let order = await createLimitOrder({ exchange, side: "sell", symbol, size });
-    // await trailOrder({ exchange, orderId: `${order.id}`, symbol, trailPct: 0.0005 });
-    let [position] = await exchange.fetchPositions([symbol]);
-    // let slOrder = await createLimitOrder({ exchange, side: 'buy', symbol, size, price: position.liquidationPrice * 0.93, stopLossPrice: position.liquidationPrice * 0.9, positionId: position.id });
-    // let tpOrder = await createLimitOrder({ exchange, side: 'buy', symbol, size, price: position.entryPrice * 0.7, takeProfitPrice: position.entryPrice * 0.73, positionId: position.id });
-    let closeOrder = await createLimitOrder({ exchange, side: "buy", symbol, size, reduceOnly: true, getPrice: ({ bid }) => Math.min(bid * 0.998, position.entryPrice * 0.998) });
-    //break;
+    let order = await createLimitOrder({ exchange, side: "sell", symbol, size });
+    await trailOrder({ exchange, orderId: `${order.id}`, symbol, trailPct: 0.0005 });
+    let position = await exchange.fetchPosition(symbol);
+    let liqPrice = position.liquidationPrice;
+    if (!liqPrice) {
+        let balance = await exchange.fetchBalance({ type: 'swap' });
+        let available = Object.keys(balance.free).reduce((p, k) => p + balance.free[k], 0);
+        liqPrice = position.markPrice + (available + position.initialMargin - position.maintenanceMargin) / Math.abs(position.contracts * position.contractSize);
+    }
+    let slOrder = await createLimitOrder({ exchange, side: 'buy', symbol, size, price: liqPrice * 0.93, stopLossPrice: liqPrice * 0.9, positionId: position.id });
+    let tpOrder = await createLimitOrder({ exchange, side: 'buy', symbol, size, price: position.entryPrice * 0.7, takeProfitPrice: position.entryPrice * 0.73, positionId: position.id });
+    let closeOrder = await createLimitOrder({ exchange, side: "buy", symbol, size, reduceOnly: true, getPrice: ({ bid }) => Math.min(bid * 0.998, position.entryPrice * 0.998), positionId: position.id });
+    break;
 }
+//fetch balance
+//fetch order"254294946405"
 //trigger take profit maker only
 //trigger stop loss maker only
 //limit close position maker only
@@ -170,11 +209,23 @@ async function createLimitOrder({ exchange, symbol, side, size, price = undefine
             let bestAsk = ob.asks[0][0];
             let price = getPrice({ side: side, bid: bestBid, ask: bestAsk });
             order = await exchange.createLimitOrder(symbol, side, size, price, params);
-            if (!(order === null || order === void 0 ? void 0 : order.id))
+            if (!order)
                 continue;
-            order = await exchange.fetchOrder(order.id, symbol, { clientOrderId: order.clientOrderId });
-            if (order.status == 'open')
-                return order;
+            if (!order.id && (stopLossPrice || takeProfitPrice)) {
+                let position = await exchange.fetchPosition(symbol);
+                if (stopLossPrice && position.info.stop_loss_price > 0)
+                    return order;
+                if (position.info.take_profit_price > 0)
+                    return order;
+                continue;
+            }
+            while (true) {
+                order = await exchange.fetchOrder(order.id, symbol); //, { clientOrderId: order.clientOrderId });
+                if (!order)
+                    continue;
+                if (order.status == 'open')
+                    return order;
+            }
         }
         catch (error) {
             retryCount++;
@@ -201,8 +252,8 @@ async function trailOrder({ exchange, orderId, symbol, trailPct, settings = { re
             if (order.side == 'sell' && bestBid > (order.price * (1 - trailPct)))
                 continue;
             let newPrice = order.side == 'buy' ? bestBid * (1 - trailPct) : bestAsk * (1 + trailPct);
-            await exchange.cancelOrder(orderId, symbol);
-            order = await createLimitOrder({ exchange, side: order.side, price: newPrice, size: order.amount, symbol });
+            // await exchange.cancelOrder(orderId, symbol);
+            // order = await createLimitOrder({ exchange, side: order.side, price: newPrice, size: order.amount, symbol })
             if (order.id != orderId)
                 orderId = order.id;
         }
