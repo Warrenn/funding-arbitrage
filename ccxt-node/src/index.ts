@@ -148,7 +148,7 @@ let factory: { [key: string]: ExchangeFactory } = {
 
 let symbol = 'XRP/USDT:USDT'
 let positionSize = 100;
-let ignore: string[] = ["binance", "okx", "bybit", "gate"];
+let ignore: string[] = [];
 
 let factoryKeys = Object.keys(factory);
 for (let k = 0; k < factoryKeys.length; k++) {
@@ -161,8 +161,10 @@ for (let k = 0; k < factoryKeys.length; k++) {
     let size = positionSize;
     if (contractSize) size = positionSize / contractSize;
 
-    let order = await createLimitOrder({ exchange, side: "sell", symbol, size });
-    await trailOrder({ exchange, orderId: `${order.id}`, symbol, trailPct: 0.0005 });
+    await blockUntilStable({ exchange, symbol, oscillationLimit: 3 });
+
+    // let order = await createLimitOrder({ exchange, side: "sell", symbol, size });
+    // await trailOrder({ exchange, orderId: `${order.id}`, symbol, trailPct: 0.0005 });
     let position = await exchange.fetchPosition(symbol);
     let liqPrice = position.liquidationPrice;
     if (!liqPrice) {
@@ -170,9 +172,9 @@ for (let k = 0; k < factoryKeys.length; k++) {
         let available = Object.keys(balance.free).reduce((p, k) => p + balance.free[k], 0);
         liqPrice = position.markPrice + (available + position.initialMargin - position.maintenanceMargin) / Math.abs(position.contracts * position.contractSize);
     }
-    let slOrder = await createLimitOrder({ exchange, side: 'buy', symbol, size, price: liqPrice * 0.93, stopLossPrice: liqPrice * 0.9, positionId: position.id });
-    let tpOrder = await createLimitOrder({ exchange, side: 'buy', symbol, size, price: position.entryPrice * 0.7, takeProfitPrice: position.entryPrice * 0.73, positionId: position.id });
-    let closeOrder = await createLimitOrder({ exchange, side: "buy", symbol, size, reduceOnly: true, getPrice: ({ bid }) => Math.min(bid * 0.998, position.entryPrice * 0.998), positionId: position.id });
+    //let slOrder = await createLimitOrder({ exchange, side: 'buy', symbol, size, price: liqPrice * 0.93, stopLossPrice: liqPrice * 0.9, positionId: position.id });
+    //let tpOrder = await createLimitOrder({ exchange, side: 'buy', symbol, size, price: position.entryPrice * 0.7, takeProfitPrice: position.entryPrice * 0.73, positionId: position.id });
+    //let closeOrder = await createLimitOrder({ exchange, side: "buy", symbol, size, reduceOnly: true, getPrice: ({ bid }) => Math.min(bid * 0.998, position.entryPrice * 0.998), positionId: position.id });
 
     break;
 }
@@ -201,6 +203,50 @@ for (let k = 0; k < factoryKeys.length; k++) {
 // let size = 1;
 // let exMakerParams = {};
 // let spreadRatioLimit = 3;
+
+async function blockUntilStable({
+    exchange,
+    symbol,
+    oscillationLimit,
+    timeout = 100
+}: {
+    exchange: ExchangePro,
+    symbol: string,
+    oscillationLimit: number,
+    timeout?: number
+}): Promise<"up" | "down"> {
+    let oscillationCount = 0;
+    let pBid, pAsk, nBid, nAsk = 0;
+    let nDirection: "up" | "down" | null = null;
+    let pDirection: "up" | "down" | null = null;
+
+    while (true) {
+        await asyncSleep(timeout);
+
+        let ob = await exchange.fetchOrderBook(symbol, exchange.options.fetchOrderBookLimit);
+        nBid = ob.bids[0][0];
+        nAsk = ob.asks[0][0];
+
+        if (!pAsk || !pBid) {
+            pAsk = nAsk;
+            pBid = nBid;
+        }
+
+        if (nBid > pAsk) nDirection = "up";
+        if (nAsk < pBid) nDirection = "down"
+
+        pAsk = nAsk;
+        pBid = nBid;
+
+        if (!pDirection) pDirection = nDirection;
+        if (pDirection != nDirection) oscillationCount++
+        pDirection = nDirection;
+
+        if (oscillationCount > oscillationLimit) return nDirection ?? "up";
+
+    }
+
+}
 
 async function createLimitOrder({
     exchange,
@@ -256,7 +302,7 @@ async function createLimitOrder({
                 continue;
             }
             while (true) {
-                order = await exchange.fetchOrder(order.id, symbol);//, { clientOrderId: order.clientOrderId });
+                order = await exchange.fetchOrder(order.id, symbol);
                 if (!order) continue;
                 if (order.status == 'open') return order;
             }
@@ -274,7 +320,7 @@ async function trailOrder({
     orderId,
     symbol,
     trailPct,
-    settings = { retryLimit: 3 }
+    settings
 }: {
     exchange: ExchangePro,
     orderId: string,
