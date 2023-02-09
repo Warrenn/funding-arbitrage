@@ -161,23 +161,27 @@ for (let k = 0; k < factoryKeys.length; k++) {
     let size = positionSize;
     if (contractSize) size = positionSize / contractSize;
 
-    await blockUntilStable({ exchange, symbol, oscillationLimit: 3 });
+    let direction = await blockUntilOscillates({ exchange, symbol, oscillationLimit: 3 });
+    console.log(direction);
 
     // let order = await createLimitOrder({ exchange, side: "sell", symbol, size });
     // await trailOrder({ exchange, orderId: `${order.id}`, symbol, trailPct: 0.0005 });
     let position = await exchange.fetchPosition(symbol);
-    let liqPrice = position.liquidationPrice;
-    if (!liqPrice) {
-        let balance: any = await exchange.fetchBalance({ type: 'swap' });
-        let available = Object.keys(balance.free).reduce((p, k) => p + balance.free[k], 0);
-        liqPrice = position.markPrice + (available + position.initialMargin - position.maintenanceMargin) / Math.abs(position.contracts * position.contractSize);
-    }
+    console.log(position);
+
+    // let liqPrice = position.liquidationPrice;
+    // if (!liqPrice) {
+    //     let balance: any = await exchange.fetchBalance({ type: 'swap' });
+    //     let available = Object.keys(balance.free).reduce((p, k) => p + balance.free[k], 0);
+    //     liqPrice = position.markPrice + (available + position.initialMargin - position.maintenanceMargin) / Math.abs(position.contracts * position.contractSize);
+    // }
     //let slOrder = await createLimitOrder({ exchange, side: 'buy', symbol, size, price: liqPrice * 0.93, stopLossPrice: liqPrice * 0.9, positionId: position.id });
     //let tpOrder = await createLimitOrder({ exchange, side: 'buy', symbol, size, price: position.entryPrice * 0.7, takeProfitPrice: position.entryPrice * 0.73, positionId: position.id });
     //let closeOrder = await createLimitOrder({ exchange, side: "buy", symbol, size, reduceOnly: true, getPrice: ({ bid }) => Math.min(bid * 0.998, position.entryPrice * 0.998), positionId: position.id });
 
-    break;
+    //break;
 }
+//position.unrealizedPnl
 
 //fetch balance
 //fetch order"254294946405"
@@ -204,17 +208,17 @@ for (let k = 0; k < factoryKeys.length; k++) {
 // let exMakerParams = {};
 // let spreadRatioLimit = 3;
 
-async function blockUntilStable({
+async function blockUntilOscillates({
     exchange,
     symbol,
-    oscillationLimit,
+    oscillationLimit = 3,
     timeout = 100
 }: {
     exchange: ExchangePro,
     symbol: string,
-    oscillationLimit: number,
+    oscillationLimit?: number,
     timeout?: number
-}): Promise<"up" | "down"> {
+}): Promise<"up" | "down" | null> {
     let oscillationCount = 0;
     let pBid, pAsk, nBid, nAsk = 0;
     let nDirection: "up" | "down" | null = null;
@@ -222,6 +226,7 @@ async function blockUntilStable({
 
     while (true) {
         await asyncSleep(timeout);
+        nDirection = null;
 
         let ob = await exchange.fetchOrderBook(symbol, exchange.options.fetchOrderBookLimit);
         nBid = ob.bids[0][0];
@@ -239,10 +244,10 @@ async function blockUntilStable({
         pBid = nBid;
 
         if (!pDirection) pDirection = nDirection;
-        if (pDirection != nDirection) oscillationCount++
-        pDirection = nDirection;
+        if (pDirection != nDirection || (!pDirection && !nDirection)) oscillationCount++
+        if (nDirection) pDirection = nDirection;
 
-        if (oscillationCount > oscillationLimit) return nDirection ?? "up";
+        if (oscillationCount > oscillationLimit) return nDirection;
 
     }
 
@@ -259,7 +264,7 @@ async function createLimitOrder({
     stopLossPrice = undefined,
     takeProfitPrice = undefined,
     positionId = undefined,
-    settings = { retryLimit: 3 }
+    retryLimit = 3
 }: {
     exchange: ExchangePro,
     symbol: string,
@@ -271,7 +276,7 @@ async function createLimitOrder({
     takeProfitPrice?: number,
     price?: number,
     positionId?: string,
-    settings?: { retryLimit: number }
+    retryLimit?: number
 }): Promise<ccxt.Order> {
 
     let params: any = { type: 'limit', postOnly: true };
@@ -283,7 +288,6 @@ async function createLimitOrder({
     if (positionId) params['positionId'] = positionId;
     if (price) getPrice = ({ }) => price;
     if (getPrice == undefined) getPrice = ({ side: s, bid: b, ask: a }) => s == 'buy' ? b : a;
-    if (settings) settings = { ...{ retryLimit: 3 }, ...settings };
 
     while (true) {
         let order: ccxt.Order | null = null;
@@ -310,7 +314,49 @@ async function createLimitOrder({
         catch (error) {
             retryCount++;
             console.log(error);
-            if (retryCount > (settings?.retryLimit || 3)) throw error;
+            if (retryCount > (retryLimit || 3)) throw error;
+        }
+    }
+}
+
+async function blockUntilClosed({
+    exchange,
+    symbol,
+    orderId,
+    diffPct = 0,
+    retryLimit = 0,
+    timeout = 100
+}: {
+    exchange: ExchangePro,
+    symbol: string,
+    orderId: string,
+    diffPct?: number,
+    retryLimit?: number,
+    timeout?: number
+}): Promise<"closed" | "error" | "high" | "low"> {
+    while (true) {
+        let retryCount = 0;
+        try {
+            await asyncSleep(timeout);
+            let order = await exchange.fetchOrder(orderId, symbol);
+            if (order.status == 'closed' || order.status == 'canceled')
+                return "closed";
+
+            if (diffPct == 0) continue;
+
+            let ob = await exchange.fetchOrderBook(order.symbol, exchange.options.fetchOrderBookLimit);
+            let bestBid = ob.bids[0][0];
+            let bestAsk = ob.asks[0][0];
+
+            if (bestBid > (order.price * (1 + diffPct))) return "high";
+            if (bestAsk < (order.price * (1 - diffPct))) return "low";
+        }
+        catch (error: any) {
+            retryCount++;
+            console.log(error);
+            if (error.name == "ExchangeError" && error.message == "order not exists") return "error";
+            if (error.name == "OrderNotFound" && error.message == "Order not found") return "error";
+            if (retryCount > (retryLimit || 3)) return "error";
         }
     }
 }
@@ -320,16 +366,14 @@ async function trailOrder({
     orderId,
     symbol,
     trailPct,
-    settings
+    retryLimit = 3
 }: {
     exchange: ExchangePro,
     orderId: string,
     symbol: string,
     trailPct: number,
-    settings?: { retryLimit: number }
+    retryLimit?: number
 }) {
-    if (settings) settings = { ...{ retryLimit: 3 }, ...settings };
-
     while (true) {
         let retryCount = 0;
         try {
@@ -345,8 +389,8 @@ async function trailOrder({
             if (order.side == 'sell' && bestBid > (order.price * (1 - trailPct))) continue;
 
             let newPrice = order.side == 'buy' ? bestBid * (1 - trailPct) : bestAsk * (1 + trailPct);
-            // await exchange.cancelOrder(orderId, symbol);
-            // order = await createLimitOrder({ exchange, side: order.side, price: newPrice, size: order.amount, symbol })
+            await exchange.cancelOrder(orderId, symbol);
+            order = await createLimitOrder({ exchange, side: order.side, price: newPrice, size: order.amount, symbol })
             if (order.id != orderId) orderId = order.id;
         }
         catch (error: any) {
@@ -354,7 +398,7 @@ async function trailOrder({
             console.log(error);
             if (error.name == "ExchangeError" && error.message == "order not exists") return;
             if (error.name == "OrderNotFound" && error.message == "Order not found") return;
-            if (retryCount > (settings?.retryLimit || 3)) return;
+            if (retryCount > (retryLimit || 3)) return;
         }
     }
 }
@@ -377,18 +421,13 @@ async function arbritage({
     }
 }) {
 
+    let [sDirection, lDirection] = await Promise.all([
+        blockUntilOscillates({ exchange: shortExchange, symbol }),
+        blockUntilOscillates({ exchange: longExchange, symbol })
+    ]);
 
-
-    //TODO: find direction first then place order keep trailing until closed then place other keep trailing until closed
-    // let [sellOrder, buyOrder] = await Promise.all([
-    //     createOrder({ exchange: shortExchange, symbol, side: 'sell', size }),
-    //     createOrder({ exchange: buyExchange, symbol, side: 'buy', size })
-    // ]);
-
-    // await Promise.all([
-    //     trailOrder({ exchange: shortExchange, orderId: `${sellOrder.id}`, symbol, trailPct: settings.trailPct }),
-    //     trailOrder({ exchange: buyExchange, orderId: `${buyOrder.id}`, symbol, trailPct: settings.trailPct })
-    // ]);
+    
+    if()
 
     let [shortPosition] = await shortExchange.fetchPositions([symbol]);
     let [longPosition] = await longExchange.fetchPositions([symbol]);

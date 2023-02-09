@@ -1,3 +1,4 @@
+import { setTimeout as asyncSleep } from 'timers/promises';
 import ccxt from 'ccxt';
 import AWS from 'aws-sdk';
 import dotenv from "dotenv";
@@ -148,20 +149,24 @@ for (let k = 0; k < factoryKeys.length; k++) {
     let size = positionSize;
     if (contractSize)
         size = positionSize / contractSize;
+    let direction = await blockUntilOscillates({ exchange, symbol, oscillationLimit: 3 });
+    console.log(direction);
     // let order = await createLimitOrder({ exchange, side: "sell", symbol, size });
     // await trailOrder({ exchange, orderId: `${order.id}`, symbol, trailPct: 0.0005 });
     let position = await exchange.fetchPosition(symbol);
-    let liqPrice = position.liquidationPrice;
-    if (!liqPrice) {
-        let balance = await exchange.fetchBalance({ type: 'swap' });
-        let available = Object.keys(balance.free).reduce((p, k) => p + balance.free[k], 0);
-        liqPrice = position.markPrice + (available + position.initialMargin - position.maintenanceMargin) / Math.abs(position.contracts * position.contractSize);
-    }
+    console.log(position);
+    // let liqPrice = position.liquidationPrice;
+    // if (!liqPrice) {
+    //     let balance: any = await exchange.fetchBalance({ type: 'swap' });
+    //     let available = Object.keys(balance.free).reduce((p, k) => p + balance.free[k], 0);
+    //     liqPrice = position.markPrice + (available + position.initialMargin - position.maintenanceMargin) / Math.abs(position.contracts * position.contractSize);
+    // }
     //let slOrder = await createLimitOrder({ exchange, side: 'buy', symbol, size, price: liqPrice * 0.93, stopLossPrice: liqPrice * 0.9, positionId: position.id });
     //let tpOrder = await createLimitOrder({ exchange, side: 'buy', symbol, size, price: position.entryPrice * 0.7, takeProfitPrice: position.entryPrice * 0.73, positionId: position.id });
-    let closeOrder = await createLimitOrder({ exchange, side: "buy", symbol, size, reduceOnly: true, getPrice: ({ bid }) => Math.min(bid * 0.998, position.entryPrice * 0.998), positionId: position.id });
-    break;
+    //let closeOrder = await createLimitOrder({ exchange, side: "buy", symbol, size, reduceOnly: true, getPrice: ({ bid }) => Math.min(bid * 0.998, position.entryPrice * 0.998), positionId: position.id });
+    //break;
 }
+//position.unrealizedPnl
 //fetch balance
 //fetch order"254294946405"
 //trigger take profit maker only
@@ -182,6 +187,37 @@ for (let k = 0; k < factoryKeys.length; k++) {
 // let size = 1;
 // let exMakerParams = {};
 // let spreadRatioLimit = 3;
+async function blockUntilOscillates({ exchange, symbol, oscillationLimit, timeout = 100 }) {
+    let oscillationCount = 0;
+    let pBid, pAsk, nBid, nAsk = 0;
+    let nDirection = null;
+    let pDirection = null;
+    while (true) {
+        await asyncSleep(timeout);
+        nDirection = null;
+        let ob = await exchange.fetchOrderBook(symbol, exchange.options.fetchOrderBookLimit);
+        nBid = ob.bids[0][0];
+        nAsk = ob.asks[0][0];
+        if (!pAsk || !pBid) {
+            pAsk = nAsk;
+            pBid = nBid;
+        }
+        if (nBid > pAsk)
+            nDirection = "up";
+        if (nAsk < pBid)
+            nDirection = "down";
+        pAsk = nAsk;
+        pBid = nBid;
+        if (!pDirection)
+            pDirection = nDirection;
+        if (pDirection != nDirection)
+            oscillationCount++;
+        if (nDirection)
+            pDirection = nDirection;
+        if (oscillationCount > oscillationLimit)
+            return nDirection;
+    }
+}
 async function createLimitOrder({ exchange, symbol, side, size, price = undefined, getPrice = undefined, reduceOnly = false, stopLossPrice = undefined, takeProfitPrice = undefined, positionId = undefined, settings = { retryLimit: 3 } }) {
     let params = { type: 'limit', postOnly: true };
     if (reduceOnly)
@@ -235,6 +271,9 @@ async function createLimitOrder({ exchange, symbol, side, size, price = undefine
         }
     }
 }
+async function blockUntilClosed({ exchange, symbol, orderId, diffPct }) {
+    return true;
+}
 async function trailOrder({ exchange, orderId, symbol, trailPct, settings }) {
     if (settings)
         settings = Object.assign({ retryLimit: 3 }, settings);
@@ -252,8 +291,8 @@ async function trailOrder({ exchange, orderId, symbol, trailPct, settings }) {
             if (order.side == 'sell' && bestBid > (order.price * (1 - trailPct)))
                 continue;
             let newPrice = order.side == 'buy' ? bestBid * (1 - trailPct) : bestAsk * (1 + trailPct);
-            // await exchange.cancelOrder(orderId, symbol);
-            // order = await createLimitOrder({ exchange, side: order.side, price: newPrice, size: order.amount, symbol })
+            await exchange.cancelOrder(orderId, symbol);
+            order = await createLimitOrder({ exchange, side: order.side, price: newPrice, size: order.amount, symbol });
             if (order.id != orderId)
                 orderId = order.id;
         }
