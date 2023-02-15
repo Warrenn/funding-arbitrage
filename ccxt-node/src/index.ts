@@ -1,9 +1,8 @@
 import { setTimeout as asyncSleep } from 'timers/promises';
-import ccxt, { ExchangePro, Order, ExchangeId, Market, Params } from 'ccxt';
+import ccxt, { ExchangePro, Order } from 'ccxt';
 import AWS from 'aws-sdk';
 import dotenv from "dotenv";
 import { exit } from 'process';
-import { count } from 'console';
 
 dotenv.config({ override: true });
 
@@ -69,7 +68,7 @@ class gate2 extends ccxt.pro.gateio {
 }
 
 class okx2 extends ccxt.pro.okex {
-    async createLimitOrder(symbol: string, side: 'buy' | 'sell', amount: number, price: number, params?: ccxt.Params | undefined): Promise<ccxt.Order> {
+    async createLimitOrder(symbol: string, side: Order["side"], amount: number, price: number, params?: ccxt.Params | undefined): Promise<ccxt.Order> {
         if ((params?.takeProfitPrice || params?.stopLossPrice)) delete params.postOnly;
         return await super.createLimitOrder(symbol, side, amount, price, params)
     }
@@ -120,16 +119,18 @@ async function getCredentials({ ssm, name }: { ssm: AWS.SSM, name: string }): Pr
 let factory: { [key: string]: ExchangeFactory } = {
     "binance": async ({ ssm }) => {
         let credentials = await getCredentials({ ssm, name: "binance" });
-        return new binance2({
+        let ex = new binance2({
             secret: credentials.secret,
             apiKey: credentials.key,
             enableRateLimit: true,
             options: { fetchOrderBookLimit: 5 }
         });
+        if (apiCredentialsKeyPrefix.match(/\/dev\//)) ex.setSandboxMode(true);
+        return ex;
     },
     "okx": async ({ ssm }) => {
         let credentials = await getCredentials({ ssm, name: "okx" });
-        return new okx2({
+        let ex = new okx2({
             secret: credentials.secret,
             apiKey: credentials.key,
             password: credentials.password,
@@ -137,10 +138,12 @@ let factory: { [key: string]: ExchangeFactory } = {
             enableRateLimit: true,
             options: { fetchOrderBookLimit: 5 }
         });
+        if (apiCredentialsKeyPrefix.match(/\/dev\//)) ex.setSandboxMode(true);
+        return ex;
     },
     "bybit": async ({ ssm }) => {
         let credentials = await getCredentials({ ssm, name: "bybit" });
-        return new ccxt.pro.bybit({
+        let ex = new ccxt.pro.bybit({
             secret: credentials.secret,
             options: {
                 'fetchTimeOffsetBeforeAuth': true,
@@ -150,31 +153,44 @@ let factory: { [key: string]: ExchangeFactory } = {
             apiKey: credentials.key,
             enableRateLimit: true
         });
+        if (apiCredentialsKeyPrefix.match(/\/dev\//)) ex.setSandboxMode(true);
+        return ex;
     },
     "gate": async ({ ssm }) => {
         let credentials = await getCredentials({ ssm, name: "gate" });
-        return new gate2({
+        let ex = new gate2({
             secret: credentials.secret,
             apiKey: credentials.key,
             enableRateLimit: true,
             options: { fetchOrderBookLimit: 5 }
         });
+        if (apiCredentialsKeyPrefix.match(/\/dev\//)) ex.setSandboxMode(true);
+        return ex;
     },
     "coinex": async ({ ssm }) => {
         let credentials = await getCredentials({ ssm, name: "coinex" });
-        return new ccxt.pro.coinex({
+        let ex = new ccxt.pro.coinex({
             secret: credentials.secret,
             apiKey: credentials.key,
             enableRateLimit: true,
             options: { fetchOrderBookLimit: 5 }
         });
+        if (apiCredentialsKeyPrefix.match(/\/dev\//)) ex.setSandboxMode(true);
+        return ex;
     }
 }
 
-let symbol = 'BNX/USDT:USDT'
+let symbol = 'ETH/USDT:USDT'
 let positionSize = 525;
 let ex = await factory["bybit"]({ ssm });
 let markets = await ex.loadMarkets();
+
+let order = await createLimitOrder({ exchange: ex, symbol, side: 'buy', size: 2 });
+await blockUntilClosed({ exchange: ex, orderId: `${order.id}`, symbol });
+let position = await ex.fetchPosition(symbol);
+let market = markets[symbol];
+let liqPrice = await calculateLiquidationPrice({ exchange: ex, market, position });
+console.log(liqPrice);
 
 // for (let i = 0; i < orders.length; i++) {
 //     await ex.cancelOrder(orders[i].id, symbol);
@@ -592,7 +608,8 @@ async function createSlOrders({
             size: longSize,
             symbol: longSymbol,
             price,
-            stopLossPrice
+            stopLossPrice,
+            positionId: longPosition.id
         });
     }
     await createLimitOrder({
@@ -601,7 +618,8 @@ async function createSlOrders({
         size: trailingLong,
         symbol: longSymbol,
         price,
-        stopLossPrice
+        stopLossPrice,
+        positionId: longPosition.id
     });
 
     liquidationPrice = await calculateLiquidationPrice({ exchange: shortExchange, position: shortPosition, market: shortMarket });
@@ -615,7 +633,8 @@ async function createSlOrders({
             size: shortSize,
             symbol: shortSymbol,
             price,
-            stopLossPrice
+            stopLossPrice,
+            positionId: shortPosition.id
         });
     }
     await createLimitOrder({
@@ -624,7 +643,8 @@ async function createSlOrders({
         size: trailingShort,
         symbol: shortSymbol,
         price,
-        stopLossPrice
+        stopLossPrice,
+        positionId: shortPosition.id
     });
 }
 
@@ -679,7 +699,8 @@ async function createTpOrders({
             size: longSize,
             symbol: longSymbol,
             price,
-            takeProfitPrice
+            takeProfitPrice,
+            positionId: longPosition.id
         });
     }
     await createLimitOrder({
@@ -688,7 +709,8 @@ async function createTpOrders({
         size: trailingLong,
         symbol: longSymbol,
         price,
-        takeProfitPrice
+        takeProfitPrice,
+        positionId: longPosition.id
     });
 
     let liquidationPriceLong = await calculateLiquidationPrice({ exchange: longExchange, position: longPosition, market: longMarket });
@@ -704,7 +726,8 @@ async function createTpOrders({
             size: shortSize,
             symbol: shortSymbol,
             price,
-            takeProfitPrice
+            takeProfitPrice,
+            positionId: shortPosition.id
         });
     }
     await createLimitOrder({
@@ -713,7 +736,8 @@ async function createTpOrders({
         size: trailingShort,
         symbol: shortSymbol,
         price,
-        takeProfitPrice
+        takeProfitPrice,
+        positionId: shortPosition.id
     });
 }
 
@@ -761,11 +785,11 @@ async function trailOrder({
 }
 
 async function closePositions(params: AdjustPositionDetails) {
-    return await adjustPositions({ ...params, shortSide: "buy", longSide: "sell", reduceOnly: true })
+    return await adjustPositions({ ...params, shortSide: "buy", longSide: "sell", reduceOnly: true });
 }
 
 async function openPositions(params: AdjustPositionDetails) {
-    return await adjustPositions({ ...params, shortSide: "sell", longSide: "buy", reduceOnly: false })
+    return await adjustPositions({ ...params, shortSide: "sell", longSide: "buy", reduceOnly: false });
 }
 
 async function adjustPositions({

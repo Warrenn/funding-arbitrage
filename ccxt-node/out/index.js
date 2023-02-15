@@ -77,16 +77,19 @@ async function getCredentials({ ssm, name }) {
 let factory = {
     "binance": async ({ ssm }) => {
         let credentials = await getCredentials({ ssm, name: "binance" });
-        return new binance2({
+        let ex = new binance2({
             secret: credentials.secret,
             apiKey: credentials.key,
             enableRateLimit: true,
             options: { fetchOrderBookLimit: 5 }
         });
+        if (apiCredentialsKeyPrefix.match(/\/dev\//))
+            ex.setSandboxMode(true);
+        return ex;
     },
     "okx": async ({ ssm }) => {
         let credentials = await getCredentials({ ssm, name: "okx" });
-        return new okx2({
+        let ex = new okx2({
             secret: credentials.secret,
             apiKey: credentials.key,
             password: credentials.password,
@@ -94,10 +97,13 @@ let factory = {
             enableRateLimit: true,
             options: { fetchOrderBookLimit: 5 }
         });
+        if (apiCredentialsKeyPrefix.match(/\/dev\//))
+            ex.setSandboxMode(true);
+        return ex;
     },
     "bybit": async ({ ssm }) => {
         let credentials = await getCredentials({ ssm, name: "bybit" });
-        return new ccxt.pro.bybit({
+        let ex = new ccxt.pro.bybit({
             secret: credentials.secret,
             options: {
                 'fetchTimeOffsetBeforeAuth': true,
@@ -107,32 +113,45 @@ let factory = {
             apiKey: credentials.key,
             enableRateLimit: true
         });
+        if (apiCredentialsKeyPrefix.match(/\/dev\//))
+            ex.setSandboxMode(true);
+        return ex;
     },
     "gate": async ({ ssm }) => {
         let credentials = await getCredentials({ ssm, name: "gate" });
-        return new gate2({
+        let ex = new gate2({
             secret: credentials.secret,
             apiKey: credentials.key,
             enableRateLimit: true,
             options: { fetchOrderBookLimit: 5 }
         });
+        if (apiCredentialsKeyPrefix.match(/\/dev\//))
+            ex.setSandboxMode(true);
+        return ex;
     },
     "coinex": async ({ ssm }) => {
         let credentials = await getCredentials({ ssm, name: "coinex" });
-        return new ccxt.pro.coinex({
+        let ex = new ccxt.pro.coinex({
             secret: credentials.secret,
             apiKey: credentials.key,
             enableRateLimit: true,
             options: { fetchOrderBookLimit: 5 }
         });
+        if (apiCredentialsKeyPrefix.match(/\/dev\//))
+            ex.setSandboxMode(true);
+        return ex;
     }
 };
-let symbol = 'BNX/USDT:USDT';
+let symbol = 'ETH/USDT:USDT';
 let positionSize = 525;
 let ex = await factory["bybit"]({ ssm });
 let markets = await ex.loadMarkets();
-let orders = await createSlOrders({ exchange: ex, limit: 0.001, trigger: 0.001, symbol });
-console.log(orders);
+let order = await createLimitOrder({ exchange: ex, symbol, side: 'buy', size: 2 });
+await blockUntilClosed({ exchange: ex, orderId: `${order.id}`, symbol });
+let position = await ex.fetchPosition(symbol);
+let market = markets[symbol];
+let liqPrice = await calculateLiquidationPrice({ exchange: ex, market, position });
+console.log(liqPrice);
 // for (let i = 0; i < orders.length; i++) {
 //     await ex.cancelOrder(orders[i].id, symbol);
 // }
@@ -410,28 +429,104 @@ async function calculateLiquidationPrice({ exchange, market, position }) {
         position.markPrice + (available + position.initialMargin - position.maintenanceMargin) / size;
     return liqPrice;
 }
-async function createSlOrders({ exchange, symbol, limit, trigger }) {
-    let position = await exchange.fetchPosition(symbol);
-    let market = exchange.markets[symbol];
-    let size = Math.abs(position.contracts * position.contractSize);
-    let liqPrice = position.liquidationPrice;
-    if (!liqPrice) {
-        let balance = await exchange.fetchBalance({ type: `${market.type}` });
-        let available = Object.keys(balance.free).reduce((p, k) => p + balance.free[k], 0);
-        liqPrice = (position.side == "long") ?
-            position.markPrice - (available + position.initialMargin - position.maintenanceMargin) / size :
-            position.markPrice + (available + position.initialMargin - position.maintenanceMargin) / size;
+async function createSlOrders({ longExchange, longMarket, longOrderCount, longPosition, longSize, longSymbol, shortExchange, shortMarket, shortOrderCount, shortPosition, shortSize, shortSymbol, trailingLong, trailingShort, limit, trigger }) {
+    let liquidationPrice = await calculateLiquidationPrice({ exchange: longExchange, position: longPosition, market: longMarket });
+    let price = liquidationPrice * (1 + limit);
+    let stopLossPrice = liquidationPrice * (1 + limit + trigger);
+    for (let i = 0; i < longOrderCount; i++) {
+        await createLimitOrder({
+            exchange: longExchange,
+            side: "sell",
+            size: longSize,
+            symbol: longSymbol,
+            price,
+            stopLossPrice,
+            positionId: longPosition.id
+        });
     }
-    let price = liqPrice * (1 - limit - trigger);
-    let stopLossPrice = liqPrice * (1 - trigger);
-    let side = 'sell';
-    if (position.side == "short") {
-        price = liqPrice * (1 + limit + trigger);
-        stopLossPrice = liqPrice * (1 + trigger);
-        side = 'buy';
+    await createLimitOrder({
+        exchange: longExchange,
+        side: "sell",
+        size: trailingLong,
+        symbol: longSymbol,
+        price,
+        stopLossPrice,
+        positionId: longPosition.id
+    });
+    liquidationPrice = await calculateLiquidationPrice({ exchange: shortExchange, position: shortPosition, market: shortMarket });
+    price = liquidationPrice * (1 - limit);
+    stopLossPrice = liquidationPrice * (1 - limit - trigger);
+    for (let i = 0; i < shortOrderCount; i++) {
+        await createLimitOrder({
+            exchange: shortExchange,
+            side: "buy",
+            size: shortSize,
+            symbol: shortSymbol,
+            price,
+            stopLossPrice,
+            positionId: shortPosition.id
+        });
     }
-    let orders = await createMultiOrders({ exchange, side, symbol, size, price, stopLossPrice, positionId: position.id });
-    return orders;
+    await createLimitOrder({
+        exchange: shortExchange,
+        side: "buy",
+        size: trailingShort,
+        symbol: shortSymbol,
+        price,
+        stopLossPrice,
+        positionId: shortPosition.id
+    });
+}
+async function createTpOrders({ longExchange, longMarket, longOrderCount, longPosition, longSize, longSymbol, shortExchange, shortMarket, shortOrderCount, shortPosition, shortSize, shortSymbol, trailingLong, trailingShort, limit, trigger }) {
+    let liquidationPriceShort = await calculateLiquidationPrice({ exchange: shortPosition, position: shortPosition, market: shortMarket });
+    let entryDiff = longPosition.entryPrice - shortPosition.entryPrice;
+    let maxLong = liquidationPriceShort + entryDiff;
+    let price = maxLong * (1 - limit);
+    let takeProfitPrice = maxLong * (1 - limit - trigger);
+    for (let i = 0; i < longOrderCount; i++) {
+        await createLimitOrder({
+            exchange: longExchange,
+            side: "sell",
+            size: longSize,
+            symbol: longSymbol,
+            price,
+            takeProfitPrice,
+            positionId: longPosition.id
+        });
+    }
+    await createLimitOrder({
+        exchange: longExchange,
+        side: "sell",
+        size: trailingLong,
+        symbol: longSymbol,
+        price,
+        takeProfitPrice,
+        positionId: longPosition.id
+    });
+    let liquidationPriceLong = await calculateLiquidationPrice({ exchange: longExchange, position: longPosition, market: longMarket });
+    let minShort = liquidationPriceLong - entryDiff;
+    price = minShort * (1 + limit);
+    takeProfitPrice = minShort * (1 + limit + trigger);
+    for (let i = 0; i < shortOrderCount; i++) {
+        await createLimitOrder({
+            exchange: shortExchange,
+            side: "buy",
+            size: shortSize,
+            symbol: shortSymbol,
+            price,
+            takeProfitPrice,
+            positionId: shortPosition.id
+        });
+    }
+    await createLimitOrder({
+        exchange: shortExchange,
+        side: "buy",
+        size: trailingShort,
+        symbol: shortSymbol,
+        price,
+        takeProfitPrice,
+        positionId: shortPosition.id
+    });
 }
 async function trailOrder({ exchange, orderId, symbol, trailPct, retryLimit = 3 }) {
     let retryCount = 0;
