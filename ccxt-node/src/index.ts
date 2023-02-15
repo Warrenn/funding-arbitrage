@@ -3,30 +3,17 @@ import ccxt, { ExchangePro, Order, ExchangeId, Market, Params } from 'ccxt';
 import AWS from 'aws-sdk';
 import dotenv from "dotenv";
 import { exit } from 'process';
+import { count } from 'console';
 
 dotenv.config({ override: true });
 
-type GetPriceFunction = ({ side, bid, ask }: { side: "buy" | "sell", bid: number, ask: number }) => number;
+type GetPriceFunction = ({ side, bid, ask }: { side: Order["side"], bid: number, ask: number }) => number;
 type ExchangeFactory = ({ ssm }: { ssm: AWS.SSM }) => Promise<ccxt.ExchangePro>;
-type OrderInstruction = {
-    exchange: ExchangePro,
-    symbol: string,
-    side: "buy" | "sell",
-    size: number
-}
-type InstructionPair = {
-    maker: OrderInstruction,
-    taker: OrderInstruction
-}
-type PositionInstruction{
-    immediateOrders: OrderInstruction[],
-    hedgeTrades: InstructionPair[]
-}
 
 type CreateOrderDetails = {
     exchange: ExchangePro,
     symbol: string,
-    side: "buy" | "sell",
+    side: Order["side"],
     size: number,
     getPrice?: GetPriceFunction,
     reduceOnly?: boolean,
@@ -36,6 +23,24 @@ type CreateOrderDetails = {
     positionId?: string,
     retryLimit?: number,
     immediate?: boolean
+}
+
+type AdjustPositionDetails ={
+    longExchange: ccxt.pro.Exchange,
+    shortExchange: ccxt.pro.Exchange,
+    longSymbol: string,
+    shortSymbol: string,
+    longSize: number;
+    shortSize: number
+    longOrderCount: number,
+    shortOrderCount: number,
+    trailingLong: number,
+    trailingShort: number,
+    trailPct: number,
+    reduceOnly?: boolean,
+    makerSide: "long" | "short",
+    shortSide?: Order["side"],
+    longSide?: Order["side"]
 }
 
 class binance2 extends ccxt.pro.binance {
@@ -254,7 +259,7 @@ let factoryKeys = Object.keys(factory);
 //size = floor((funds*leverage)/price)
 
 // let exObLimit = 5;
-// let side: "buy" | "sell" = 'buy';
+// let side: Order["side"] = 'buy';
 // let size = 1;
 // let exMakerParams = {};
 // let spreadRatioLimit = 3;
@@ -307,43 +312,28 @@ let factoryKeys = Object.keys(factory);
 
 // }
 
-async function generateCreatePositionInstructions({
-    longExchange,
-    shortExchange,
+function calculateOrderSizes({
     shortMarket,
     longMarket,
-    shortPosition,
-    longPosition,
-    size,
-    symbolLong,
-    symbolShort,
-    makerSide
+    longRequirement,
+    shortRequirement
 }: {
-    longExchange: ccxt.ExchangePro,
-    shortExchange: ccxt.ExchangePro,
     shortMarket: ccxt.Market,
     longMarket: ccxt.Market,
-    shortPosition: any,
-    longPosition: any,
-    size: number,
-    symbolLong: string,
-    symbolShort: string,
-    makerSide: "long" | "short"
-}): Promise<PositionInstruction> {
+    shortRequirement: number,
+    longRequirement: number
+}): {
+    longSize: number;
+    shortSize: number
+    longOrderCount: number,
+    shortOrderCount: number,
+    trailingLong: number,
+    trailingShort: number
+} {
 
-    let returnValue: PositionInstruction = { immediateOrders: [], hedgeTrades: [] };
-
-    let shortFilledSize = Math.abs(shortPosition.contracts * (shortPosition.contractSize || 1));
-    let longFilledSize = Math.abs(longPosition.contracts * (longPosition.contractSize || 1));
-
-    let shortRequired = size - shortFilledSize;
-    let longRequired = size - longFilledSize;
-
-    if (shortRequired <= 0 && longRequired <= 0) return returnValue;
-
-    let maxSize = Math.max(shortRequired, longRequired);
-    if (shortRequired > 0 && shortRequired < maxSize) maxSize = shortRequired;
-    if (longRequired > 0 && longRequired < maxSize) maxSize = longRequired;
+    let maxSize = Math.max(shortRequirement, longRequirement);
+    if (shortRequirement > 0 && shortRequirement < maxSize) maxSize = shortRequirement;
+    if (longRequirement > 0 && longRequirement < maxSize) maxSize = longRequirement;
     if (longMarket.limits.amount?.max && longMarket.limits.amount?.max < maxSize) maxSize = longMarket.limits.amount?.max;
     if (shortMarket.limits.amount?.max && shortMarket.limits.amount?.max < maxSize) maxSize = shortMarket.limits.amount?.max;
 
@@ -355,65 +345,32 @@ async function generateCreatePositionInstructions({
     let shortRmdr = maxSize % shortContractSize;
     let longRmdr = maxSize % longContractSize;
 
-    let longCount = Math.floor(longRequired / maxSize);
-    let shortCount = Math.floor(shortRequired / maxSize);
+    let longOrderCount = Math.floor(longRequirement / maxSize);
+    let shortOrderCount = Math.floor(shortRequirement / maxSize);
 
-    let shortLeftOver = shortRequired % maxSize;
-    let longLeftOver = longRequired % maxSize;
+    let shortLeftOver = shortRequirement % maxSize;
+    let longLeftOver = longRequirement % maxSize;
 
-    let lastAmountShort = (shortCount * shortRmdr) + shortLeftOver;
-    let lastAmountLong = (longCount * longRmdr) + longLeftOver;
+    let trailingLong = (shortOrderCount * shortRmdr) + shortLeftOver;
+    let trailingShort = (longOrderCount * longRmdr) + longLeftOver;
 
-    shortCount = shortCount + Math.floor(lastAmountShort / maxSize);
-    longCount = longCount + Math.floor(lastAmountLong / maxSize);
+    shortOrderCount = shortOrderCount + Math.floor(trailingLong / maxSize);
+    longOrderCount = longOrderCount + Math.floor(trailingShort / maxSize);
 
-    lastAmountLong = lastAmountLong % maxSize;
-    lastAmountShort = lastAmountShort % maxSize;
+    trailingShort = Math.floor((trailingShort % maxSize) / shortContractSize);
+    trailingLong = Math.floor((trailingLong % maxSize) / longContractSize);
 
-    let countDiff = longCount - shortCount;
-    let countTrade = ((longCount + shortCount) - Math.abs(countDiff)) / 2;
+    let longSize = Math.floor(maxSize / longContractSize);
+    let shortSize = Math.floor(maxSize / shortContractSize);
 
-    for (let i = 0; i < Math.abs(countDiff); i++) {
-        if (countDiff > 0) {
-            let oSize = Math.floor(maxSize / longContractSize);
-            let eqTrade: OrderInstruction = { side: "buy", size: oSize, symbol: symbolLong, exchange: longExchange };
-            returnValue.immediateOrders.push(eqTrade);
-        }
-        if (countDiff < 0) {
-            let oSize = Math.floor(maxSize / shortContractSize);
-            let eqTrade: OrderInstruction = { side: "sell", size: oSize, symbol: symbolShort, exchange: shortExchange };
-            returnValue.immediateOrders.push(eqTrade);
-        }
+    return {
+        longSize,
+        shortSize,
+        longOrderCount,
+        shortOrderCount,
+        trailingLong,
+        trailingShort
     }
-
-    for (let i = 0; i < countTrade; i++) {
-        let sSize = Math.floor(maxSize / shortContractSize);
-        let sTrade: OrderInstruction = { side: "sell", size: sSize, symbol: symbolShort, exchange: shortExchange };
-        let lSize = Math.floor(maxSize / longContractSize);
-        let lTrade: OrderInstruction = { side: "buy", size: lSize, symbol: symbolLong, exchange: longExchange };
-        if (makerSide == "long") {
-            returnValue.hedgeTrades.push({ maker: lTrade, taker: sTrade });
-        }
-        if (makerSide == "short") {
-            returnValue.hedgeTrades.push({ maker: sTrade, taker: lTrade });
-        }
-    }
-
-    let lastSSize = Math.floor(lastAmountShort / shortContractSize);
-    let lastShort: OrderInstruction = { side: "sell", size: lastSSize, symbol: symbolShort, exchange: shortExchange };
-
-    let lastLSize = Math.floor(lastAmountLong / longContractSize);
-    let lastLong: OrderInstruction = { side: "buy", size: lastLSize, symbol: symbolLong, exchange: longExchange };
-
-    if (makerSide == "long") {
-        returnValue.hedgeTrades.push({ maker: lastLong, taker: lastShort });
-    }
-    if (makerSide == "short") {
-        returnValue.hedgeTrades.push({ maker: lastShort, taker: lastLong });
-    }
-
-    return returnValue;
-
 }
 
 async function blockUntilOscillates({
@@ -621,7 +578,6 @@ async function createSlOrders({
         liqPrice = (position.side == "long") ?
             position.markPrice - (available + position.initialMargin - position.maintenanceMargin) / size :
             position.markPrice + (available + position.initialMargin - position.maintenanceMargin) / size;
-        ;
     }
 
     let price = liqPrice * (1 - limit - trigger);
@@ -681,38 +637,116 @@ async function trailOrder({
     }
 }
 
-async function openPositions({
-    instructions,
-    diffPct
-}: {
-    instructions: PositionInstruction,
-    diffPct: number
-}) {
-    if (!instructions) return;
-    if (instructions.hedgeTrades.length == 0 && instructions.immediateOrders.length == 0) return;
+async function closePositions(params:AdjustPositionDetails) {
+   return await  adjustPositions({...params,shortSide:"buy",longSide:"sell",reduceOnly:true})
+}
 
-    for (let i = 0; i < instructions.immediateOrders.length; i++) {
-        let immediateOrder = instructions.immediateOrders[i];
-        await createImmediateOrder({ ...immediateOrder });
+async function openPositions(params:AdjustPositionDetails) {
+    return await  adjustPositions({...params,shortSide:"sell",longSide:"buy",reduceOnly:false})
+ }
+
+async function adjustPositions({
+    longExchange,
+    longSymbol,
+    shortExchange,
+    shortSymbol,
+    longSize,
+    longOrderCount,
+    shortOrderCount,
+    shortSize,
+    trailingLong,
+    trailingShort,
+    trailPct,
+    makerSide,
+    shortSide = "sell",
+    longSide = "buy",
+    reduceOnly = false
+}:  AdjustPositionDetails ) {
+    let countDiff = Math.abs(longOrderCount - shortOrderCount);
+    let orderCount = ((longOrderCount + shortOrderCount) - countDiff) / 2;
+    let side: Order["side"] = longSide;
+    let exchange: ccxt.pro.Exchange = longExchange;
+    let symbol: string = longSymbol;
+    let size: number = longSize;
+    let takerSide: Order["side"] = shortSide;
+    let takerExchange: ccxt.pro.Exchange = shortExchange;
+    let takerSymbol: string = shortSymbol;
+    let takerSize: number = shortSize;
+    let trailSize: number = trailingLong;
+    let takerTrailSize: number = trailingShort;
+
+    if (countDiff > 0 && longOrderCount > shortOrderCount) {
+        exchange = longExchange;
+        symbol = longSymbol;
+        size = longSize;
+        side = longSide;
     }
 
-    for (let i = 0; i < instructions.hedgeTrades.length; i++) {
-        let hedgeOrder = instructions.hedgeTrades[i];
-        let orderInstruction = hedgeOrder.maker;
-        let order = await createLimitOrder({ ...orderInstruction });
-        
+    if (countDiff > 0 && shortOrderCount > longOrderCount) {
+        exchange = shortExchange;
+        symbol = shortSymbol;
+        side = shortSide
+        size = shortSize;
+    }
+
+    for (let i = 0; i < countDiff; i++) {
+        await createImmediateOrder({ exchange, side, size, symbol, reduceOnly })
+    }
+
+    if (makerSide == "long") {
+        exchange = longExchange;
+        symbol = longSymbol;
+        size = longSize;
+        side = longSide;
+        trailSize = trailingLong;
+
+        takerExchange = shortExchange;
+        takerSymbol = shortSymbol;
+        takerSize = shortSize;
+        takerSide = shortSide;
+        takerTrailSize = trailingShort;
+    }
+
+    if (makerSide == "short") {
+        exchange = shortExchange;
+        symbol = shortSymbol;
+        size = shortSize;
+        side = shortSide;
+        trailSize = trailingShort;
+
+        takerExchange = longExchange;
+        takerSymbol = longSymbol;
+        takerSize = longSize;
+        takerSide = longSide;
+        takerTrailSize = trailingLong;
+    }
+
+    for (let i = 0; i < orderCount; i++) {
+        let order = await createLimitOrder({ exchange, side, size, symbol, reduceOnly });
+
         while (true) {
-            let result = await blockUntilClosed({ exchange: orderInstruction.exchange, symbol: orderInstruction.symbol, orderId: `${order.id}`, diffPct });
+            let result = await blockUntilClosed({ exchange, symbol, orderId: `${order.id}`, diffPct: trailPct });
             if (result == "closed") break;
             if (result == "error") continue;
-            await orderInstruction.exchange.cancelOrder(`${order.id}`, orderInstruction.symbol);
-            order = await createLimitOrder({ ...orderInstruction });
+            await exchange.cancelOrder(`${order.id}`, symbol);
+            order = await createLimitOrder({ exchange, side, size, symbol, reduceOnly });
         }
 
-        await createImmediateOrder({ ...hedgeOrder.taker });
+        await createImmediateOrder({ exchange: takerExchange, side: takerSide, size: takerSize, symbol: takerSymbol, reduceOnly });
     }
 
+    let order = await createLimitOrder({ exchange, side, size: trailSize, symbol, reduceOnly });
 
+    while (true) {
+        let result = await blockUntilClosed({ exchange, symbol, orderId: `${order.id}`, diffPct: trailPct });
+        if (result == "closed") break;
+        if (result == "error") continue;
+        await exchange.cancelOrder(`${order.id}`, symbol);
+        order = await createLimitOrder({ exchange, side, size: trailSize, symbol, reduceOnly });
+    }
+
+    await createImmediateOrder({ exchange: takerExchange, side: takerSide, size: takerTrailSize, symbol: takerSymbol, reduceOnly });
+}
 
 
     //There are two positions only one with a take profit and stop loss
@@ -761,7 +795,7 @@ async function openPositions({
 
     //place a closing order for short
     //place a closing order for long
-}
+
 
 //check maximum order size and work this for multiple orders
 //see how to work this for multiple accounts
