@@ -35,13 +35,12 @@ type AdjustPositionDetails = {
     shortOrderCount: number,
     trailingLong: number,
     trailingShort: number,
-    trailPct: number,
-    reduceOnly?: boolean,
     makerSide: "long" | "short",
+    trailPct?: number,
+    reduceOnly?: boolean,
     shortSide?: Order["side"],
     longSide?: Order["side"]
 }
-
 
 class binance2 extends ccxt.pro.binance {
     async fetchPosition(symbol: string, params?: ccxt.Params | undefined): Promise<any> {
@@ -242,26 +241,169 @@ let factory: { [key: string]: ExchangeFactory } = {
     }
 }
 
-let symbol = 'SXP/USDT:USDT'
-let positionSize = 525;
-let exchange = await factory["coinex"]({ ssm });
-let markets = await exchange.loadMarkets();
-let market = markets[symbol];
+let symbol = 'ETH/USDT:USDT'
+let positionSize = 10;
 
-//let order = await createImmediateOrder({ exchange, side: 'sell', size: 100, symbol });
+let longExchange = await factory["binance"]({ ssm });
+let longMarkets = await longExchange.loadMarkets();
+let longMarket = longMarkets[symbol];
+let longPosition = await longExchange.fetchPosition(symbol);
 
-let position = await exchange.fetchPosition(symbol);
-let liqPrice = await calculateLiquidationPrice({ exchange, market, position });
+let shortExchange = await factory["bybit"]({ ssm });
+let shortMarkets = await shortExchange.loadMarkets();
+let shortMarket = shortMarkets[symbol];
+let shortPosition = await shortExchange.fetchPosition(symbol);
 
-// let openRemaining = openPositionRemainingAmount({ position, desiredSize });
-// let slRemaining = await slRemainingAmount({});
-// let tpRemaining = await tpRemainingAmount({});
-// let closeRemaining = await closePositionRemainingAmount({});
-console.log(liqPrice);
+let currentLongSize = getPositionSize(longPosition);
+let currentShortSize = getPositionSize(shortPosition);
 
-//await createLimitOrder({ exchange: ex, side: 'buy', size: 100, takeProfitPrice: 0.2, price: 0.1, symbol, positionId: position.id });
+let longRequirement = positionSize - currentLongSize;
+let shortRequirement = positionSize - currentShortSize;
 
-let trans = await exchange.fetchOpenStopOrders(symbol);
+let {
+    longOrderCount,
+    longSize,
+    shortSize,
+    shortOrderCount,
+    trailingLong,
+    trailingShort
+} = calculateOrderSizes({
+    idealOrderSize: 2,
+    longMarket,
+    shortMarket,
+    longRequirement,
+    shortRequirement
+});
+
+await openPositions({
+    longExchange,
+    longOrderCount,
+    longSize,
+    longSymbol: symbol,
+    shortExchange,
+    shortOrderCount,
+    shortSize,
+    trailingLong,
+    trailingShort,
+    shortSymbol: symbol,
+    makerSide: 'long'
+});
+
+longPosition = await longExchange.fetchPosition(symbol);
+shortPosition = await shortExchange.fetchPosition(symbol);
+
+let remainingShortSl = await remainingStopLoss({ exchange: shortExchange, position: shortPosition, symbol });
+let remainingLongSl = await remainingStopLoss({ exchange: longExchange, position: longPosition, symbol });
+
+({
+    longOrderCount,
+    longSize,
+    shortSize,
+    shortOrderCount,
+    trailingLong,
+    trailingShort
+} = calculateOrderSizes({
+    idealOrderSize: 3,
+    longMarket,
+    shortMarket,
+    longRequirement: remainingLongSl,
+    shortRequirement: remainingShortSl
+}));
+
+await createSlOrders({
+    limit: 0.005,
+    trigger: 0.005,
+    longExchange,
+    longMarket,
+    longOrderCount,
+    longPosition,
+    longSize,
+    longSymbol: symbol,
+    shortExchange,
+    shortMarket,
+    shortOrderCount,
+    shortPosition,
+    shortSize,
+    shortSymbol: symbol,
+    trailingLong,
+    trailingShort
+});
+
+let remainingShortTp = await remainingTakeProfit({ exchange: shortExchange, position: shortPosition, symbol });
+let remainingLongTp = await remainingTakeProfit({ exchange: longExchange, position: longPosition, symbol });
+
+({
+    longOrderCount,
+    longSize,
+    shortSize,
+    shortOrderCount,
+    trailingLong,
+    trailingShort
+} = calculateOrderSizes({
+    idealOrderSize: 4,
+    longMarket,
+    shortMarket,
+    longRequirement: remainingLongTp,
+    shortRequirement: remainingShortTp
+}));
+
+await createTpOrders({
+    limit: 0.005,
+    trigger: 0.005,
+    longExchange,
+    longMarket,
+    longOrderCount,
+    longPosition,
+    longSize,
+    longSymbol: symbol,
+    shortExchange,
+    shortMarket,
+    shortOrderCount,
+    shortPosition,
+    shortSize,
+    shortSymbol: symbol,
+    trailingLong,
+    trailingShort
+});
+
+await asyncSleep(5000);
+
+longPosition = await longExchange.fetchPosition(symbol);
+shortPosition = await shortExchange.fetchPosition(symbol);
+
+longRequirement = getPositionSize(longPosition);
+shortRequirement = getPositionSize(shortPosition);
+
+({
+    longOrderCount,
+    longSize,
+    shortSize,
+    shortOrderCount,
+    trailingLong,
+    trailingShort
+} = calculateOrderSizes({
+    idealOrderSize: 6,
+    longMarket,
+    shortMarket,
+    longRequirement,
+    shortRequirement
+}));
+
+await closePositions({
+    longExchange,
+    longOrderCount,
+    longSize,
+    longSymbol: symbol,
+    shortExchange,
+    shortOrderCount,
+    shortSize,
+    trailingLong,
+    trailingShort,
+    shortSymbol: symbol,
+    makerSide: 'short'
+});
+
+console.log('checkup');
 
 //reduce only
 //sl if price < entry position is long
@@ -1066,7 +1208,7 @@ async function calculateLiquidationPrice({
     let liqPrice = position.liquidationPrice;
     if (liqPrice >= 0) return liqPrice;
 
-    let size = Math.abs(position.contracts * position.contractSize);
+    let size = getPositionSize(position);
     let balances: ccxt.Balances = await exchange.fetchBalance({ type: market.type || 'swap' });
     let available =
         (('BUSD' in balances) ? balances['BUSD'].free : 0) +
@@ -1322,8 +1464,8 @@ async function adjustPositions({
     shortSize,
     trailingLong,
     trailingShort,
-    trailPct,
     makerSide,
+    trailPct = 0.005,
     shortSide = "sell",
     longSide = "buy",
     reduceOnly = false
