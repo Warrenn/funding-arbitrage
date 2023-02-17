@@ -1142,7 +1142,7 @@ async function createLimitOrder({
     stopLossPrice = undefined,
     takeProfitPrice = undefined,
     positionId = undefined,
-    retryLimit = 3,
+    retryLimit = 10,
     immediate = false
 }: CreateOrderDetails): Promise<ccxt.Order> {
 
@@ -1180,16 +1180,23 @@ async function createLimitOrder({
                 continue;
             }
             while (true) {
-                order = await exchange.fetchOrder(order.id, symbol);
-                if (!order) continue;
-                if (order.status == 'open' || order.status == 'closed') return order;
-                break;
+                try {
+                    order = await exchange.fetchOrder(order.id, symbol);
+                    if (!order) continue;
+                    if (order.status == 'open' || order.status == 'closed') return order;
+                    break;
+                }
+                catch (error) {
+                    retryCount++;
+                    console.log(error);
+                    if (retryCount > retryLimit) throw error;
+                }
             }
         }
         catch (error) {
             retryCount++;
             console.log(error);
-            if (retryCount > (retryLimit || 3)) throw error;
+            if (retryCount > retryLimit) throw error;
         }
     }
 }
@@ -1319,15 +1326,17 @@ async function createSlOrders({
             positionId: longPosition.id
         });
     }
-    await createLimitOrder({
-        exchange: longExchange,
-        side: "sell",
-        size: trailingLong,
-        symbol: longSymbol,
-        price,
-        stopLossPrice,
-        positionId: longPosition.id
-    });
+    if (trailingLong > 0) {
+        await createLimitOrder({
+            exchange: longExchange,
+            side: "sell",
+            size: trailingLong,
+            symbol: longSymbol,
+            price,
+            stopLossPrice,
+            positionId: longPosition.id
+        });
+    }
 
     liquidationPrice = await calculateLiquidationPrice({ exchange: shortExchange, position: shortPosition, market: shortMarket });
     price = liquidationPrice * (1 - limit);
@@ -1344,15 +1353,17 @@ async function createSlOrders({
             positionId: shortPosition.id
         });
     }
-    await createLimitOrder({
-        exchange: shortExchange,
-        side: "buy",
-        size: trailingShort,
-        symbol: shortSymbol,
-        price,
-        stopLossPrice,
-        positionId: shortPosition.id
-    });
+    if (trailingShort > 0) {
+        await createLimitOrder({
+            exchange: shortExchange,
+            side: "buy",
+            size: trailingShort,
+            symbol: shortSymbol,
+            price,
+            stopLossPrice,
+            positionId: shortPosition.id
+        });
+    }
 }
 
 async function createTpOrders({
@@ -1409,15 +1420,18 @@ async function createTpOrders({
             positionId: longPosition.id
         });
     }
-    await createLimitOrder({
-        exchange: longExchange,
-        side: "sell",
-        size: trailingLong,
-        symbol: longSymbol,
-        price,
-        takeProfitPrice,
-        positionId: longPosition.id
-    });
+
+    if (trailingLong > 0) {
+        await createLimitOrder({
+            exchange: longExchange,
+            side: "sell",
+            size: trailingLong,
+            symbol: longSymbol,
+            price,
+            takeProfitPrice,
+            positionId: longPosition.id
+        });
+    }
 
     let liquidationPriceLong = await calculateLiquidationPrice({ exchange: longExchange, position: longPosition, market: longMarket });
 
@@ -1436,15 +1450,18 @@ async function createTpOrders({
             positionId: shortPosition.id
         });
     }
-    await createLimitOrder({
-        exchange: shortExchange,
-        side: "buy",
-        size: trailingShort,
-        symbol: shortSymbol,
-        price,
-        takeProfitPrice,
-        positionId: shortPosition.id
-    });
+
+    if (trailingShort > 0) {
+        await createLimitOrder({
+            exchange: shortExchange,
+            side: "buy",
+            size: trailingShort,
+            symbol: shortSymbol,
+            price,
+            takeProfitPrice,
+            positionId: shortPosition.id
+        });
+    }
 }
 
 async function trailOrder({
