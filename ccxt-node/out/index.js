@@ -9,8 +9,35 @@ class binance2 extends ccxt.pro.binance {
         let [position] = await super.fetchPositions([symbol], params);
         return position;
     }
+    async fetchOpenStopOrders(symbol, since, limit, params) {
+        return super.fetchOpenOrders(symbol, since, limit, params);
+    }
 }
 class gate2 extends ccxt.pro.gateio {
+    describe() {
+        return this.deepExtend(super.describe(), {
+            'urls': {
+                'test': {
+                    'public': {
+                        'withdrawals': 'https://api.gateio.ws/api/v4',
+                        'wallet': 'https://api.gateio.ws/api/v4',
+                        'margin': 'https://api.gateio.ws/api/v4',
+                        'spot': 'https://api.gateio.ws/api/v4',
+                        'options': 'https://api.gateio.ws/api/v4',
+                        'subAccounts': 'https://api.gateio.ws/api/v4',
+                    },
+                    'private': {
+                        'withdrawals': 'https://api.gateio.ws/api/v4',
+                        'wallet': 'https://api.gateio.ws/api/v4',
+                        'margin': 'https://api.gateio.ws/api/v4',
+                        'spot': 'https://api.gateio.ws/api/v4',
+                        'options': 'https://api.gateio.ws/api/v4',
+                        'subAccounts': 'https://api.gateio.ws/api/v4',
+                    }
+                }
+            }
+        });
+    }
     async fetchOrder(id, symbol, params) {
         try {
             let order = await super.fetchOrder(id, symbol, params);
@@ -22,16 +49,42 @@ class gate2 extends ccxt.pro.gateio {
         }
         return await super.fetchOrder(id, symbol, Object.assign(Object.assign({}, params), { stop: true }));
     }
+    async fetchOpenStopOrders(symbol, since, limit, params) {
+        return super.fetchOpenOrders(symbol, since, limit, Object.assign(Object.assign({}, params), { stop: true }));
+    }
     async fetchPosition(symbol, params) {
         let [position] = await super.fetchPositions([symbol], params);
         return position;
     }
 }
+class bybit2 extends ccxt.pro.bybit {
+    async fetchOpenStopOrders(symbol, since, limit, params) {
+        return super.fetchOpenOrders(symbol, since, limit, params);
+    }
+}
+class coinex2 extends ccxt.pro.coinex {
+    async fetchPosition(symbol, params) {
+        let position = await super.fetchPosition(symbol, params);
+        if (position.contracts == undefined && !!position.contractSize) {
+            position.contracts = parseFloat(position.contractSize);
+            position.contractSize = 1;
+        }
+        return position;
+    }
+    async fetchOpenStopOrders(symbol, since, limit, params) {
+        return super.fetchOpenOrders(symbol, since, limit, params);
+    }
+}
 class okx2 extends ccxt.pro.okex {
-    async createLimitOrder(symbol, side, amount, price, params) {
-        if (((params === null || params === void 0 ? void 0 : params.takeProfitPrice) || (params === null || params === void 0 ? void 0 : params.stopLossPrice)))
+    async createOrder(symbol, type, side, amount, price, params) {
+        if (((params === null || params === void 0 ? void 0 : params.takeProfitPrice) || (params === null || params === void 0 ? void 0 : params.stopLossPrice))) {
             delete params.postOnly;
-        return await super.createLimitOrder(symbol, side, amount, price, params);
+            delete params.timeInForce;
+        }
+        return await super.createOrder(symbol, type, side, amount, price, params);
+    }
+    async fetchOpenStopOrders(symbol, since, limit, params) {
+        return super.fetchOpenOrders(symbol, since, limit, Object.assign(Object.assign({}, params), { ordType: 'conditional' }));
     }
     async fetchOrder(id, symbol, params) {
         let openParams = { ordType: 'conditional', algoId: id };
@@ -103,7 +156,7 @@ let factory = {
     },
     "bybit": async ({ ssm }) => {
         let credentials = await getCredentials({ ssm, name: "bybit" });
-        let ex = new ccxt.pro.bybit({
+        let ex = new bybit2({
             secret: credentials.secret,
             options: {
                 'fetchTimeOffsetBeforeAuth': true,
@@ -131,30 +184,527 @@ let factory = {
     },
     "coinex": async ({ ssm }) => {
         let credentials = await getCredentials({ ssm, name: "coinex" });
-        let ex = new ccxt.pro.coinex({
+        return new coinex2({
             secret: credentials.secret,
             apiKey: credentials.key,
             enableRateLimit: true,
             options: { fetchOrderBookLimit: 5 }
         });
-        if (apiCredentialsKeyPrefix.match(/\/dev\//))
-            ex.setSandboxMode(true);
-        return ex;
     }
 };
-let symbol = 'ETH/USDT:USDT';
+let symbol = 'SXP/USDT:USDT';
 let positionSize = 525;
-let ex = await factory["bybit"]({ ssm });
-let markets = await ex.loadMarkets();
-let order = await createLimitOrder({ exchange: ex, symbol, side: 'buy', size: 2 });
-await blockUntilClosed({ exchange: ex, orderId: `${order.id}`, symbol });
-let position = await ex.fetchPosition(symbol);
+let exchange = await factory["coinex"]({ ssm });
+let markets = await exchange.loadMarkets();
 let market = markets[symbol];
-let liqPrice = await calculateLiquidationPrice({ exchange: ex, market, position });
+//let order = await createImmediateOrder({ exchange, side: 'sell', size: 100, symbol });
+let position = await exchange.fetchPosition(symbol);
+let liqPrice = await calculateLiquidationPrice({ exchange, market, position });
+let desiredSize = 100;
+// let openRemaining = openPositionRemainingAmount({ position, desiredSize });
+// let slRemaining = await slRemainingAmount({});
+// let tpRemaining = await tpRemainingAmount({});
+// let closeRemaining = await closePositionRemainingAmount({});
 console.log(liqPrice);
-// for (let i = 0; i < orders.length; i++) {
-//     await ex.cancelOrder(orders[i].id, symbol);
-// }
+//await createLimitOrder({ exchange: ex, side: 'buy', size: 100, takeProfitPrice: 0.2, price: 0.1, symbol, positionId: position.id });
+let trans = await exchange.fetchOpenStopOrders(symbol);
+//reduce only
+//sl if price < entry position is long
+//sl if price > entry position is short
+//binance
+//when no position
+// position.contracts == 0; position.contractSize = 1;
+//when no orders
+// [];
+//trans[0].remaining 
+//position.side == "short" && trans[0].type=='stop' && trans[0].price > position.entryPrice
+//position.side == "long" && trans[0].type=='stop' && trans[0].price < position.entryPrice
+/*
+{
+  info: {
+    orderId: "1010186900",
+    symbol: "ETHUSDT",
+    status: "NEW",
+    clientOrderId: "m8AHx7veNXUBeZRrFiKPSw",
+    price: "4717.29",
+    avgPrice: "0",
+    origQty: "1",
+    executedQty: "0",
+    cumQuote: "0",
+    timeInForce: "IOC",
+    type: "STOP",
+    reduceOnly: true,
+    closePosition: false,
+    side: "BUY",
+    positionSide: "BOTH",
+    stopPrice: "4669.64",
+    workingType: "CONTRACT_PRICE",
+    priceProtect: false,
+    origType: "STOP",
+    time: "1676544359949",
+    updateTime: "1676544359949",
+  },
+  id: "1010186900",
+  clientOrderId: "m8AHx7veNXUBeZRrFiKPSw",
+  timestamp: 1676544359949,
+  datetime: "2023-02-16T10:45:59.949Z",
+  lastTradeTimestamp: undefined,
+  symbol: "ETH/USDT:USDT",
+  type: "stop",
+  timeInForce: "IOC",
+  postOnly: false,
+  reduceOnly: true,
+  side: "buy",
+  price: 4717.29,
+  triggerPrice: 4669.64,
+  amount: 1,
+  cost: 0,
+  average: undefined,
+  filled: 0,
+  remaining: 1,
+  status: "open",
+  fee: undefined,
+  trades: [
+  ],
+  fees: [
+  ],
+}
+*/
+//bybit
+//when no position
+// position.contracts == undefined; position.contractSize == undefined;
+//trans[0].remaining//trans[1].stopPrice
+/*
+[
+  {
+    info: {
+      symbol: "ETHUSDT",
+      orderType: "Limit",
+      orderLinkId: "",
+      orderId: "1022c8f6-a315-4135-821a-9189d8ab9db0",
+      stopOrderType: "UNKNOWN",
+      orderStatus: "New",
+      takeProfit: "",
+      cumExecValue: "0.00000000",
+      blockTradeId: "",
+      price: "1693.93000000",
+      createdTime: "1676542464083",
+      tpTriggerBy: "UNKNOWN",
+      timeInForce: "PostOnly",
+      basePrice: "",
+      updatedTime: "1676542464091",
+      side: "Sell",
+      triggerPrice: "",
+      cumExecFee: "0.00000000",
+      slTriggerBy: "UNKNOWN",
+      leavesQty: "1.0000",
+      closeOnTrigger: false,
+      cumExecQty: "0.00000000",
+      reduceOnly: false,
+      qty: "1.0000",
+      stopLoss: "",
+      triggerBy: "UNKNOWN",
+      orderIM: "",
+    },
+    id: "1022c8f6-a315-4135-821a-9189d8ab9db0",
+    clientOrderId: undefined,
+    timestamp: 1676542464083,
+    datetime: "2023-02-16T10:14:24.083Z",
+    lastTradeTimestamp: undefined,
+    symbol: "ETH/USDT:USDT",
+    type: "limit",
+    timeInForce: "PO",
+    postOnly: true,
+    side: "sell",
+    price: 1693.93,
+    stopPrice: undefined,
+    triggerPrice: undefined,
+    amount: 1,
+    cost: 0,
+    average: undefined,
+    filled: 0,
+    remaining: 1,
+    status: "open",
+    fee: {
+      cost: 0,
+      currency: "USDT",
+    },
+    trades: [
+    ],
+    fees: [
+      {
+        cost: 0,
+        currency: "USDT",
+      },
+    ],
+  },
+  {
+    info: {
+      symbol: "ETHUSDT",
+      orderType: "Limit",
+      orderLinkId: "",
+      orderId: "c3fed97b-bd41-49e7-a7c0-b5bf029f30df",
+      stopOrderType: "Stop",
+      orderStatus: "Untriggered",
+      takeProfit: "",
+      cumExecValue: "0.00000000",
+      blockTradeId: "",
+      price: "1032.70000000",
+      createdTime: "1676545111622",
+      tpTriggerBy: "UNKNOWN",
+      timeInForce: "ImmediateOrCancel",
+      basePrice: "1042.94000000",
+      updatedTime: "1676545111622",
+      side: "Sell",
+      triggerPrice: "1042.93000000",
+      cumExecFee: "0.00000000",
+      slTriggerBy: "UNKNOWN",
+      leavesQty: "1.0000",
+      closeOnTrigger: false,
+      cumExecQty: "0.00000000",
+      reduceOnly: true,
+      qty: "1.0000",
+      stopLoss: "",
+      triggerBy: "LastPrice",
+      orderIM: "",
+    },
+    id: "c3fed97b-bd41-49e7-a7c0-b5bf029f30df",
+    clientOrderId: undefined,
+    timestamp: 1676545111622,
+    datetime: "2023-02-16T10:58:31.622Z",
+    lastTradeTimestamp: undefined,
+    symbol: "ETH/USDT:USDT",
+    type: "limit",
+    timeInForce: "IOC",
+    postOnly: false,
+    side: "sell",
+    price: 1032.7,
+    stopPrice: "1042.93000000",
+    triggerPrice: "1042.93000000",
+    amount: 1,
+    cost: 0,
+    average: undefined,
+    filled: 0,
+    remaining: 1,
+    status: "open",
+    fee: {
+      cost: 0,
+      currency: "USDT",
+    },
+    trades: [
+    ],
+    fees: [
+      {
+        cost: 0,
+        currency: "USDT",
+      },
+    ],
+  },
+]
+*/
+//okx
+//when no position
+// position == undefined
+/*
+[
+  {
+    info: {
+      activePx: "",
+      actualPx: "",
+      actualSide: "",
+      actualSz: "0",
+      algoId: "546446951596773376",
+      cTime: "1676555105754",
+      callbackRatio: "",
+      callbackSpread: "",
+      ccy: "",
+      clOrdId: "e847386590ce4dBCb6f82f2af4f98d7c",
+      closeFraction: "",
+      instId: "ETH-USDT-SWAP",
+      instType: "SWAP",
+      last: "1680.69",
+      lever: "3",
+      moveTriggerPx: "",
+      ordId: "0",
+      ordPx: "",
+      ordType: "conditional",
+      posSide: "net",
+      pxLimit: "",
+      pxSpread: "",
+      pxVar: "",
+      quickMgnType: "",
+      reduceOnly: "true",
+      side: "buy",
+      slOrdPx: "10485.02",
+      slTriggerPx: "10379.11",
+      slTriggerPxType: "last",
+      state: "live",
+      sz: "100",
+      szLimit: "",
+      tag: "e847386590ce4dBC",
+      tdMode: "cross",
+      tgtCcy: "",
+      timeInterval: "",
+      tpOrdPx: "",
+      tpTriggerPx: "",
+      tpTriggerPxType: "",
+      triggerPx: "",
+      triggerPxType: "",
+      triggerTime: "",
+    },
+    id: "546446951596773376",
+    clientOrderId: "e847386590ce4dBCb6f82f2af4f98d7c",
+    timestamp: 1676555105754,
+    datetime: "2023-02-16T13:45:05.754Z",
+    lastTradeTimestamp: undefined,
+    symbol: "ETH/USDT:USDT",
+    type: "conditional",
+    timeInForce: undefined,
+    postOnly: undefined,
+    side: "buy",
+    price: undefined,
+    stopPrice: 10379.11,
+    triggerPrice: 10379.11,
+    average: undefined,
+    cost: undefined,
+    amount: 100,
+    filled: undefined,
+    remaining: undefined,
+    status: "open",
+    fee: undefined,
+    trades: [
+    ],
+    reduceOnly: true,
+    fees: [
+    ],
+  },
+]
+*/
+//gate
+//when no position
+// position == undefined
+/*
+ [
+  {
+    id: "82590",
+    clientOrderId: undefined,
+    timestamp: 1676570520000,
+    datetime: "2023-02-16T18:02:00.000Z",
+    lastTradeTimestamp: 1676570520000,
+    status: "open",
+    symbol: "ETH/USDT:USDT",
+    type: "limit",
+    timeInForce: "IOC",
+    postOnly: false,
+    reduceOnly: undefined,
+    side: "sell",
+    price: 705.75,
+    stopPrice: 712.7,
+    triggerPrice: 712.7,
+    average: undefined,
+    amount: 100,
+    cost: 0,
+    filled: 0,
+    remaining: 100,
+    fee: undefined,
+    fees: [
+    ],
+    trades: [
+    ],
+    info: {
+      user: "13005419",
+      trigger: {
+        strategy_type: "0",
+        price_type: "0",
+        price: "712.7",
+        rule: "2",
+        expiration: "0",
+      },
+      initial: {
+        contract: "ETH_USDT",
+        size: "-100",
+        price: "705.75",
+        tif: "ioc",
+        text: "",
+        iceberg: "0",
+        is_close: false,
+        is_reduce_only: true,
+        auto_size: "",
+      },
+      id: "82590",
+      trade_id: "0",
+      status: "open",
+      reason: "",
+      create_time: "1676570520",
+      finish_time: "1676570520",
+      is_stop_order: false,
+      stop_trigger: {
+        rule: "0",
+        trigger_price: "",
+        order_price: "",
+      },
+      me_order_id: "0",
+      order_type: "",
+    },
+  },
+]
+ */
+//coinex
+//when no position
+// position.contracts == undefined; position.contractSize == undefined;
+/*
+{
+  info: {
+    adl_sort: "44",
+    adl_sort_val: "0.05617248",
+    amount: "100",
+    amount_max: "100",
+    amount_max_margin: "11.39460000000000000000",
+    bkr_price: "2.42209514858453999999",
+    bkr_price_imply: "0.45578399999999999999",
+    close_left: "100",
+    create_time: "1676573183.220349",
+    deal_all: "34.18380000000000000000",
+    deal_asset_fee: "0.00000000000000000000",
+    fee_asset: "",
+    finish_type: "1",
+    first_price: "0.341838",
+    insurance: "0.00000000000000000000",
+    latest_price: "0.341838",
+    leverage: "3",
+    liq_amount: "0.00000000000000000000",
+    liq_order_price: "0",
+    liq_order_time: "0",
+    liq_price: "2.41867676858453999999",
+    liq_price_imply: "0.45236561999999999999",
+    liq_profit: "0.00000000000000000000",
+    liq_time: "0",
+    mainten_margin: "0.01",
+    mainten_margin_amount: "0.34183800000000000000",
+    maker_fee: "0.00030",
+    margin_amount: "11.39460000000000000000",
+    market: "SXPUSDT",
+    open_margin: "6.08550584950924121952",
+    open_margin_imply: "0.33333333333333333333",
+    open_price: "0.34183800000000000000",
+    open_val: "34.18380000000000000000",
+    open_val_max: "34.18380000000000000000",
+    position_id: "207876113",
+    profit_clearing: "-0.01709190000000000000",
+    profit_real: "-0.01709190000000000000",
+    profit_unreal: "0.052500",
+    side: "1",
+    stop_loss_price: "2.370303",
+    stop_loss_type: "1",
+    sys: "0",
+    take_profit_price: "0.00000000000000000000",
+    take_profit_type: "0",
+    taker_fee: "0.00050",
+    total: "49",
+    type: "2",
+    update_time: "1676573183.220612",
+    user_id: "4637301",
+  },
+  id: 207876113,
+  symbol: "SXP/USDT",
+  notional: undefined,
+  marginMode: "cross",
+  liquidationPrice: "2.41867676858453999999",
+  entryPrice: "0.34183800000000000000",
+  unrealizedPnl: "0.052500",
+  percentage: undefined,
+  contracts: undefined,
+  contractSize: "100",
+  markPrice: undefined,
+  side: "short",
+  hedged: undefined,
+  timestamp: 1676573183220,
+  datetime: "2023-02-16T18:46:23.220Z",
+  maintenanceMargin: "0.34183800000000000000",
+  maintenanceMarginPercentage: "0.01",
+  collateral: "11.39460000000000000000",
+  initialMargin: undefined,
+  initialMarginPercentage: undefined,
+  leverage: 3,
+  marginRatio: undefined,
+}
+
+{
+  info: {
+    adl_sort: "43",
+    adl_sort_val: "0.05617248",
+    amount: "100",
+    amount_max: "100",
+    amount_max_margin: "11.39460000000000000000",
+    bkr_price: "2.42209514858453999999",
+    bkr_price_imply: "0.45578399999999999999",
+    close_left: "100",
+    create_time: "1676573183.220349",
+    deal_all: "34.18380000000000000000",
+    deal_asset_fee: "0.00000000000000000000",
+    fee_asset: "",
+    finish_type: "1",
+    first_price: "0.341838",
+    insurance: "0.00000000000000000000",
+    latest_price: "0.341838",
+    leverage: "3",
+    liq_amount: "0.00000000000000000000",
+    liq_order_price: "0",
+    liq_order_time: "0",
+    liq_price: "2.41867676858453999999",
+    liq_price_imply: "0.45236561999999999999",
+    liq_profit: "0.00000000000000000000",
+    liq_time: "0",
+    mainten_margin: "0.01",
+    mainten_margin_amount: "0.34183800000000000000",
+    maker_fee: "0.00030",
+    margin_amount: "11.39460000000000000000",
+    market: "SXPUSDT",
+    open_margin: "6.08550584950924121952",
+    open_margin_imply: "0.33333333333333333333",
+    open_price: "0.34183800000000000000",
+    open_val: "34.18380000000000000000",
+    open_val_max: "34.18380000000000000000",
+    position_id: "207876113",
+    profit_clearing: "-0.01709190000000000000",
+    profit_real: "-0.01709190000000000000",
+    profit_unreal: "0.053600",
+    side: "1",
+    stop_loss_price: "2.370303",
+    stop_loss_type: "1",
+    sys: "0",
+    take_profit_price: "0.200000",
+    take_profit_type: "1",
+    taker_fee: "0.00050",
+    total: "49",
+    type: "2",
+    update_time: "1676573183.220612",
+    user_id: "4637301",
+  },
+  id: 207876113,
+  symbol: "SXP/USDT",
+  notional: undefined,
+  marginMode: "cross",
+  liquidationPrice: "2.41867676858453999999",
+  entryPrice: "0.34183800000000000000",
+  unrealizedPnl: "0.053600",
+  percentage: undefined,
+  contracts: undefined,
+  contractSize: "100",
+  markPrice: undefined,
+  side: "short",
+  hedged: undefined,
+  timestamp: 1676573183220,
+  datetime: "2023-02-16T18:46:23.220Z",
+  maintenanceMargin: "0.34183800000000000000",
+  maintenanceMarginPercentage: "0.01",
+  collateral: "11.39460000000000000000",
+  initialMargin: undefined,
+  initialMarginPercentage: undefined,
+  leverage: 3,
+  marginRatio: undefined,
+}
+*/
 let ignore = [];
 exit();
 let factoryKeys = Object.keys(factory);
@@ -257,6 +807,24 @@ let factoryKeys = Object.keys(factory);
 //     //if position is still less than required
 //     //make more position orders
 // }
+function openPositionRemainingAmount({ position, desiredSize }) {
+    if (!(position === null || position === void 0 ? void 0 : position.contracts))
+        return desiredSize;
+    let contractSize = (position.contractSize) ? position.contractSize : 1;
+    return desiredSize - (position.contracts * contractSize);
+}
+async function slRemainingAmount({ exchange, position, symbol, desiredSize }) {
+    let orders = await exchange.fetchOpenStopOrders(symbol);
+    if (!orders.length)
+        return desiredSize;
+    let contractSize = (position.contractSize) ? position.contractSize : 1;
+    let entryPrice = position.entryPrice;
+    let side = position.side;
+    let slOrders = orders.filter((o) => !!o.triggerPrice && ((side == "long" && o.triggerPrice < entryPrice) ||
+        (side == "short" && o.triggerPrice > entryPrice)));
+    let totalSlContracts = slOrders.reduce((a, o) => a + ((o.remaining != undefined) ? o.remaining : o.amount), 0);
+    return totalSlContracts * contractSize;
+}
 function calculateOrderSizes({ shortMarket, longMarket, longRequirement, shortRequirement }) {
     var _a, _b, _c, _d, _e, _f;
     let maxSize = Math.max(shortRequirement, longRequirement);
@@ -328,7 +896,7 @@ async function blockUntilOscillates({ exchange, symbol, oscillationLimit = 3, ti
 }
 async function createLimitOrder({ exchange, symbol, side, size, price = undefined, getPrice = undefined, reduceOnly = false, stopLossPrice = undefined, takeProfitPrice = undefined, positionId = undefined, retryLimit = 3, immediate = false }) {
     let params = { type: 'limit', postOnly: true };
-    if (immediate) {
+    if (immediate || stopLossPrice) {
         delete params.postOnly;
         params["timeInForce"] = "IOC";
     }
@@ -345,12 +913,12 @@ async function createLimitOrder({ exchange, symbol, side, size, price = undefine
     if (price)
         getPrice = ({}) => price;
     if (immediate && getPrice == undefined)
-        getPrice = ({ side: s, bid: b, ask: a }) => s == 'buy' ? (a * 1.02) : (b * 0.98);
+        getPrice = ({ side: s, bid: b, ask: a }) => s == 'buy' ? a : b;
     if (getPrice == undefined)
         getPrice = ({ side: s, bid: b, ask: a }) => s == 'buy' ? b : a;
+    let retryCount = 0;
     while (true) {
         let order = null;
-        let retryCount = 0;
         try {
             let ob = await exchange.fetchOrderBook(symbol, exchange.options.fetchOrderBookLimit);
             let bestBid = ob.bids[0][0];
@@ -419,7 +987,7 @@ async function createImmediateOrder(params) {
 }
 async function calculateLiquidationPrice({ exchange, market, position }) {
     let liqPrice = position.liquidationPrice;
-    if (liqPrice)
+    if (liqPrice >= 0)
         return liqPrice;
     let size = Math.abs(position.contracts * position.contractSize);
     let balance = await exchange.fetchBalance({ type: `${market.type}` });
