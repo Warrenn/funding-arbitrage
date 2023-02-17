@@ -415,6 +415,9 @@ await closePositions({
     makerSide: 'short'
 });
 
+await longExchange.cancelAllOrders(symbol, { stop: true });
+await shortExchange.cancelAllOrders(symbol, { stop: true });
+
 console.log('checkup');
 
 //reduce only
@@ -961,7 +964,7 @@ async function openOrdersSize({
     let orders = await exchange.fetchOpenOrders(symbol);
     if (!orders?.length) return 0;
 
-    let totalContracts = orders.filter(o => o.side == side).reduce((a, o) => a + ((o.remaining != undefined) ? o.remaining : o.amount), 0);
+    let totalContracts = orders.filter((o: any) => o.side == side && !o.triggerPrice).reduce((a, o) => a + ((o.remaining != undefined) ? o.remaining : o.amount), 0);
     return (totalContracts * contractSize);
 }
 

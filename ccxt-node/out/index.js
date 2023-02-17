@@ -210,6 +210,8 @@ let longBuySize = await openBuyOrdersSize({ exchange: longExchange, symbol, posi
 let shortSellSize = await openSellOrdersSize({ exchange: shortExchange, symbol, position: shortPosition });
 longRequirement = longRequirement - longBuySize;
 shortRequirement = shortRequirement - shortSellSize;
+await longExchange.cancelAllOrders(symbol, { stop: true });
+await shortExchange.cancelAllOrders(symbol, { stop: true });
 let { longOrderCount, longSize, shortSize, shortOrderCount, trailingLong, trailingShort } = calculateOrderSizes({
     idealOrderSize: 2,
     longMarket,
@@ -300,7 +302,7 @@ await createTpOrders({
     trailingLong,
     trailingShort
 });
-await asyncSleep(5000);
+//await asyncSleep(5000);
 longPosition = await longExchange.fetchPosition(symbol);
 shortPosition = await shortExchange.fetchPosition(symbol);
 longRequirement = getPositionSize(longPosition);
@@ -852,7 +854,7 @@ async function openOrdersSize({ exchange, position, symbol, side }) {
     let orders = await exchange.fetchOpenOrders(symbol);
     if (!(orders === null || orders === void 0 ? void 0 : orders.length))
         return 0;
-    let totalContracts = orders.filter(o => o.side == side).reduce((a, o) => a + ((o.remaining != undefined) ? o.remaining : o.amount), 0);
+    let totalContracts = orders.filter((o) => o.side == side && !o.triggerPrice).reduce((a, o) => a + ((o.remaining != undefined) ? o.remaining : o.amount), 0);
     return (totalContracts * contractSize);
 }
 async function remainingToClose({ exchange, position, symbol, triggerType }) {
@@ -1083,15 +1085,17 @@ async function createSlOrders({ longExchange, longMarket, longOrderCount, longPo
             positionId: longPosition.id
         });
     }
-    await createLimitOrder({
-        exchange: longExchange,
-        side: "sell",
-        size: trailingLong,
-        symbol: longSymbol,
-        price,
-        stopLossPrice,
-        positionId: longPosition.id
-    });
+    if (trailingLong > 0) {
+        await createLimitOrder({
+            exchange: longExchange,
+            side: "sell",
+            size: trailingLong,
+            symbol: longSymbol,
+            price,
+            stopLossPrice,
+            positionId: longPosition.id
+        });
+    }
     liquidationPrice = await calculateLiquidationPrice({ exchange: shortExchange, position: shortPosition, market: shortMarket });
     price = liquidationPrice * (1 - limit);
     stopLossPrice = liquidationPrice * (1 - limit - trigger);
@@ -1106,15 +1110,17 @@ async function createSlOrders({ longExchange, longMarket, longOrderCount, longPo
             positionId: shortPosition.id
         });
     }
-    await createLimitOrder({
-        exchange: shortExchange,
-        side: "buy",
-        size: trailingShort,
-        symbol: shortSymbol,
-        price,
-        stopLossPrice,
-        positionId: shortPosition.id
-    });
+    if (trailingShort > 0) {
+        await createLimitOrder({
+            exchange: shortExchange,
+            side: "buy",
+            size: trailingShort,
+            symbol: shortSymbol,
+            price,
+            stopLossPrice,
+            positionId: shortPosition.id
+        });
+    }
 }
 async function createTpOrders({ longExchange, longMarket, longOrderCount, longPosition, longSize, longSymbol, shortExchange, shortMarket, shortOrderCount, shortPosition, shortSize, shortSymbol, trailingLong, trailingShort, limit, trigger }) {
     let liquidationPriceShort = await calculateLiquidationPrice({ exchange: shortExchange, position: shortPosition, market: shortMarket });
@@ -1133,15 +1139,17 @@ async function createTpOrders({ longExchange, longMarket, longOrderCount, longPo
             positionId: longPosition.id
         });
     }
-    await createLimitOrder({
-        exchange: longExchange,
-        side: "sell",
-        size: trailingLong,
-        symbol: longSymbol,
-        price,
-        takeProfitPrice,
-        positionId: longPosition.id
-    });
+    if (trailingLong > 0) {
+        await createLimitOrder({
+            exchange: longExchange,
+            side: "sell",
+            size: trailingLong,
+            symbol: longSymbol,
+            price,
+            takeProfitPrice,
+            positionId: longPosition.id
+        });
+    }
     let liquidationPriceLong = await calculateLiquidationPrice({ exchange: longExchange, position: longPosition, market: longMarket });
     let minShort = liquidationPriceLong - entryDiff;
     price = minShort * (1 + limit);
@@ -1157,15 +1165,17 @@ async function createTpOrders({ longExchange, longMarket, longOrderCount, longPo
             positionId: shortPosition.id
         });
     }
-    await createLimitOrder({
-        exchange: shortExchange,
-        side: "buy",
-        size: trailingShort,
-        symbol: shortSymbol,
-        price,
-        takeProfitPrice,
-        positionId: shortPosition.id
-    });
+    if (trailingShort > 0) {
+        await createLimitOrder({
+            exchange: shortExchange,
+            side: "buy",
+            size: trailingShort,
+            symbol: shortSymbol,
+            price,
+            takeProfitPrice,
+            positionId: shortPosition.id
+        });
+    }
 }
 async function trailOrder({ exchange, orderId, symbol, trailPct, retryLimit = 3 }) {
     let retryCount = 0;
