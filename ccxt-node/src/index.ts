@@ -260,6 +260,12 @@ let currentShortSize = getPositionSize(shortPosition);
 let longRequirement = positionSize - currentLongSize;
 let shortRequirement = positionSize - currentShortSize;
 
+let longBuySize = await openBuyOrdersSize({ exchange: longExchange, symbol, position: longPosition });
+let shortSellSize = await openSellOrdersSize({ exchange: shortExchange, symbol, position: shortPosition });
+
+longRequirement = longRequirement - longBuySize;
+shortRequirement = shortRequirement - shortSellSize;
+
 let {
     longOrderCount,
     longSize,
@@ -373,6 +379,12 @@ shortPosition = await shortExchange.fetchPosition(symbol);
 
 longRequirement = getPositionSize(longPosition);
 shortRequirement = getPositionSize(shortPosition);
+
+let longSellSize = await openSellOrdersSize({ exchange: longExchange, symbol, position: longPosition });
+let shortBuySize = await openBuyOrdersSize({ exchange: shortExchange, symbol, position: shortPosition });
+
+longRequirement = longRequirement - longSellSize;
+shortRequirement = shortRequirement - shortBuySize;
 
 ({
     longOrderCount,
@@ -919,6 +931,40 @@ function getPositionSize(position: any | undefined): number {
     return contractSize * contracts;
 }
 
+async function openBuyOrdersSize(params: {
+    exchange: ccxt.ExchangePro,
+    symbol: string,
+    position: any
+}): Promise<number> {
+    return openOrdersSize({ ...params, side: 'buy' });
+}
+
+async function openSellOrdersSize(params: {
+    exchange: ccxt.ExchangePro,
+    symbol: string,
+    position: any
+}): Promise<number> {
+    return openOrdersSize({ ...params, side: 'sell' });
+}
+async function openOrdersSize({
+    exchange,
+    position,
+    symbol,
+    side
+}: {
+    exchange: ccxt.ExchangePro,
+    symbol: string,
+    position: any,
+    side: Order['side']
+}): Promise<number> {
+    let contractSize = (position?.contractSize) ? parseFloat(position.contractSize) : 1;
+    let orders = await exchange.fetchOpenOrders(symbol);
+    if (!orders?.length) return 0;
+
+    let totalContracts = orders.filter(o => o.side == side).reduce((a, o) => a + ((o.remaining != undefined) ? o.remaining : o.amount), 0);
+    return (totalContracts * contractSize);
+}
+
 async function remainingToClose({
     exchange,
     position,
@@ -1309,7 +1355,6 @@ async function createSlOrders({
     });
 }
 
-
 async function createTpOrders({
     longExchange,
     longMarket,
@@ -1465,7 +1510,7 @@ async function adjustPositions({
     trailingLong,
     trailingShort,
     makerSide,
-    trailPct = 0.005,
+    trailPct = 0.0001,
     shortSide = "sell",
     longSide = "buy",
     reduceOnly = false
@@ -1543,17 +1588,21 @@ async function adjustPositions({
         await createImmediateOrder({ exchange: takerExchange, side: takerSide, size: takerSize, symbol: takerSymbol, reduceOnly });
     }
 
-    let order = await createLimitOrder({ exchange, side, size: trailSize, symbol, reduceOnly });
+    if (trailSize > 0) {
+        let order = await createLimitOrder({ exchange, side, size: trailSize, symbol, reduceOnly });
 
-    while (true) {
-        let result = await blockUntilClosed({ exchange, symbol, orderId: order.id, diffPct: trailPct });
-        if (result == "closed") break;
-        if (result == "error") continue;
-        await exchange.cancelOrder(order.id, symbol);
-        order = await createLimitOrder({ exchange, side, size: trailSize, symbol, reduceOnly });
+        while (true) {
+            let result = await blockUntilClosed({ exchange, symbol, orderId: order.id, diffPct: trailPct });
+            if (result == "closed") break;
+            if (result == "error") continue;
+            await exchange.cancelOrder(order.id, symbol);
+            order = await createLimitOrder({ exchange, side, size: trailSize, symbol, reduceOnly });
+        }
     }
 
-    await createImmediateOrder({ exchange: takerExchange, side: takerSide, size: takerTrailSize, symbol: takerSymbol, reduceOnly });
+    if (takerTrailSize > 0) {
+        await createImmediateOrder({ exchange: takerExchange, side: takerSide, size: takerTrailSize, symbol: takerSymbol, reduceOnly });
+    }
 }
 
 //see how to work this for multiple accounts

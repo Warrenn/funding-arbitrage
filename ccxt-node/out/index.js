@@ -193,17 +193,142 @@ let factory = {
     }
 };
 let symbol = 'ETH/USDT:USDT';
-let positionSize = 525;
-let exchange = await factory["gate"]({ ssm });
-let markets = await exchange.loadMarkets();
-let market = markets[symbol];
-//let order = await createImmediateOrder({ exchange, side: 'sell', size: 100, symbol });
-let position = await exchange.fetchPosition(symbol);
-let liqPrice = await calculateLiquidationPrice({ exchange, market, position });
-console.log(liqPrice);
-//await createLimitOrder({ exchange: ex, side: 'buy', size: 100, takeProfitPrice: 0.2, price: 0.1, symbol, positionId: position.id });
-let remaining = await remainingStopLoss({ exchange, position, symbol });
-console.log(remaining);
+let positionSize = 10;
+let longExchange = await factory["binance"]({ ssm });
+let longMarkets = await longExchange.loadMarkets();
+let longMarket = longMarkets[symbol];
+let longPosition = await longExchange.fetchPosition(symbol);
+let shortExchange = await factory["bybit"]({ ssm });
+let shortMarkets = await shortExchange.loadMarkets();
+let shortMarket = shortMarkets[symbol];
+let shortPosition = await shortExchange.fetchPosition(symbol);
+let currentLongSize = getPositionSize(longPosition);
+let currentShortSize = getPositionSize(shortPosition);
+let longRequirement = positionSize - currentLongSize;
+let shortRequirement = positionSize - currentShortSize;
+let { longOrderCount, longSize, shortSize, shortOrderCount, trailingLong, trailingShort } = calculateOrderSizes({
+    idealOrderSize: 2,
+    longMarket,
+    shortMarket,
+    longRequirement,
+    shortRequirement
+});
+await openPositions({
+    longExchange,
+    longOrderCount,
+    longSize,
+    longSymbol: symbol,
+    shortExchange,
+    shortOrderCount,
+    shortSize,
+    trailingLong,
+    trailingShort,
+    shortSymbol: symbol,
+    makerSide: 'long'
+});
+longPosition = await longExchange.fetchPosition(symbol);
+shortPosition = await shortExchange.fetchPosition(symbol);
+let remainingShortSl = await remainingStopLoss({ exchange: shortExchange, position: shortPosition, symbol });
+let remainingLongSl = await remainingStopLoss({ exchange: longExchange, position: longPosition, symbol });
+({
+    longOrderCount,
+    longSize,
+    shortSize,
+    shortOrderCount,
+    trailingLong,
+    trailingShort
+} = calculateOrderSizes({
+    idealOrderSize: 3,
+    longMarket,
+    shortMarket,
+    longRequirement: remainingLongSl,
+    shortRequirement: remainingShortSl
+}));
+await createSlOrders({
+    limit: 0.005,
+    trigger: 0.005,
+    longExchange,
+    longMarket,
+    longOrderCount,
+    longPosition,
+    longSize,
+    longSymbol: symbol,
+    shortExchange,
+    shortMarket,
+    shortOrderCount,
+    shortPosition,
+    shortSize,
+    shortSymbol: symbol,
+    trailingLong,
+    trailingShort
+});
+let remainingShortTp = await remainingTakeProfit({ exchange: shortExchange, position: shortPosition, symbol });
+let remainingLongTp = await remainingTakeProfit({ exchange: longExchange, position: longPosition, symbol });
+({
+    longOrderCount,
+    longSize,
+    shortSize,
+    shortOrderCount,
+    trailingLong,
+    trailingShort
+} = calculateOrderSizes({
+    idealOrderSize: 4,
+    longMarket,
+    shortMarket,
+    longRequirement: remainingLongTp,
+    shortRequirement: remainingShortTp
+}));
+await createTpOrders({
+    limit: 0.005,
+    trigger: 0.005,
+    longExchange,
+    longMarket,
+    longOrderCount,
+    longPosition,
+    longSize,
+    longSymbol: symbol,
+    shortExchange,
+    shortMarket,
+    shortOrderCount,
+    shortPosition,
+    shortSize,
+    shortSymbol: symbol,
+    trailingLong,
+    trailingShort
+});
+await asyncSleep(5000);
+longPosition = await longExchange.fetchPosition(symbol);
+shortPosition = await shortExchange.fetchPosition(symbol);
+longRequirement = getPositionSize(longPosition);
+shortRequirement = getPositionSize(shortPosition);
+({
+    longOrderCount,
+    longSize,
+    shortSize,
+    shortOrderCount,
+    trailingLong,
+    trailingShort
+} = calculateOrderSizes({
+    idealOrderSize: 6,
+    longMarket,
+    shortMarket,
+    longRequirement,
+    shortRequirement
+}));
+await closePositions({
+    longExchange,
+    longOrderCount,
+    longSize,
+    longSymbol: symbol,
+    shortExchange,
+    shortOrderCount,
+    shortSize,
+    trailingLong,
+    trailingShort,
+    shortSymbol: symbol,
+    makerSide: 'short'
+});
+console.log('checkup');
 //reduce only
 //sl if price < entry position is long
 //sl if price > entry position is short
@@ -1050,7 +1175,7 @@ async function closePositions(params) {
 async function openPositions(params) {
     return await adjustPositions(Object.assign(Object.assign({}, params), { shortSide: "sell", longSide: "buy", reduceOnly: false }));
 }
-async function adjustPositions({ longExchange, longSymbol, shortExchange, shortSymbol, longSize, longOrderCount, shortOrderCount, shortSize, trailingLong, trailingShort, trailPct, makerSide, shortSide = "sell", longSide = "buy", reduceOnly = false }) {
+async function adjustPositions({ longExchange, longSymbol, shortExchange, shortSymbol, longSize, longOrderCount, shortOrderCount, shortSize, trailingLong, trailingShort, makerSide, trailPct = 0.005, shortSide = "sell", longSide = "buy", reduceOnly = false }) {
     let countDiff = Math.abs(longOrderCount - shortOrderCount);
     let orderCount = ((longOrderCount + shortOrderCount) - countDiff) / 2;
     let side = longSide;
