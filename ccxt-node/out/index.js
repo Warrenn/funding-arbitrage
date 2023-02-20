@@ -83,6 +83,12 @@ class okx2 extends ccxt.pro.okex {
         }
         return await super.createOrder(symbol, type, side, amount, price, params);
     }
+    async cancelAllOrders(...args) {
+        let orders = await super.fetchOpenOrders(args[0]);
+        for (let i = 0; i < orders.length; i++) {
+            await super.cancelOrder(orders[i].id, args[0]);
+        }
+    }
     async fetchOpenStopOrders(symbol, since, limit, params) {
         return super.fetchOpenOrders(symbol, since, limit, Object.assign(Object.assign({}, params), { ordType: 'conditional' }));
     }
@@ -192,16 +198,18 @@ let factory = {
         });
     }
 };
-let symbol = 'ETH/USDT:USDT';
+let symbol = 'TRX/USDT:USDT';
 let positionSize = 10;
-let longExchange = await factory["binance"]({ ssm });
+let longExchange = await factory["gate"]({ ssm });
 let longMarkets = await longExchange.loadMarkets();
 let longMarket = longMarkets[symbol];
 let longPosition = await longExchange.fetchPosition(symbol);
-let shortExchange = await factory["bybit"]({ ssm });
+let shortExchange = await factory["okx"]({ ssm });
 let shortMarkets = await shortExchange.loadMarkets();
 let shortMarket = shortMarkets[symbol];
 let shortPosition = await shortExchange.fetchPosition(symbol);
+await longExchange.cancelAllOrders(symbol);
+await shortExchange.cancelAllOrders(symbol);
 let currentLongSize = getPositionSize(longPosition);
 let currentShortSize = getPositionSize(shortPosition);
 let longRequirement = positionSize - currentLongSize;
@@ -210,8 +218,6 @@ let longBuySize = await openBuyOrdersSize({ exchange: longExchange, symbol, posi
 let shortSellSize = await openSellOrdersSize({ exchange: shortExchange, symbol, position: shortPosition });
 longRequirement = longRequirement - longBuySize;
 shortRequirement = shortRequirement - shortSellSize;
-await longExchange.cancelAllOrders(symbol, { stop: true });
-await shortExchange.cancelAllOrders(symbol, { stop: true });
 let { longOrderCount, longSize, shortSize, shortOrderCount, trailingLong, trailingShort } = calculateOrderSizes({
     idealOrderSize: 2,
     longMarket,
@@ -230,7 +236,7 @@ await openPositions({
     trailingLong,
     trailingShort,
     shortSymbol: symbol,
-    makerSide: 'long'
+    makerSide: 'short'
 });
 longPosition = await longExchange.fetchPosition(symbol);
 shortPosition = await shortExchange.fetchPosition(symbol);
@@ -302,7 +308,7 @@ await createTpOrders({
     trailingLong,
     trailingShort
 });
-//await asyncSleep(5000);
+await asyncSleep(5000);
 longPosition = await longExchange.fetchPosition(symbol);
 shortPosition = await shortExchange.fetchPosition(symbol);
 longRequirement = getPositionSize(longPosition);
@@ -338,7 +344,16 @@ await closePositions({
     shortSymbol: symbol,
     makerSide: 'short'
 });
+await longExchange.cancelAllOrders(symbol, { stop: true });
+await shortExchange.cancelAllOrders(symbol, { stop: true });
 console.log('checkup');
+//adjust risk limit for each exchange
+//change leverage for each exchange
+//include risk limit for each token and for each exchange
+//multi account and risk limit
+//kucoin involved
+//spot account and margin
+//
 //reduce only
 //sl if price < entry position is long
 //sl if price > entry position is short
