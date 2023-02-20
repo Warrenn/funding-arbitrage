@@ -262,6 +262,14 @@ async function getBestTradingPair({ minThreshold, ignoreExchanges, ignoreSymbols
         let diff = (maxRate != undefined && minRate != undefined) ? Math.abs(maxRate - minRate) : 0;
         if (minThreshold && diff < minThreshold)
             continue;
+        //if max or the min alone is bigger than the max diff
+        // go find alternatives
+        //   first look at kucoin
+        //   then look at spot exchanges
+        //      start with the highest trade margin
+        // for each exchange for each pair maker and taker fee.
+        // for each exchange for each pair limit and leverage
+        //only if they have the same sign do we look to the spot account
         if (diff < maxDiff)
             continue;
         maxDiff = diff;
@@ -282,10 +290,26 @@ async function getBestTradingPair({ minThreshold, ignoreExchanges, ignoreSymbols
     };
 }
 ;
-let tp = await getBestTradingPair({
-    ignoreSymbols: ['1000SHIB', 'SHIB1000', 'PHB', '1000BONK', 'BTCDOM', 'HT', 'TWT', 'T', 'TON', 'ILV', 'FOOTBALL', 'USDC'],
-    ignoreExchanges: ['dydx', 'bitget']
-});
+// let tp = await getBestTradingPair({
+//     ignoreSymbols: ['1000SHIB', 'SHIB1000', 'PHB', '1000BONK', 'BTCDOM', 'HT', 'TWT', 'T', 'TON', 'ILV', 'FOOTBALL', 'USDC'],
+//     ignoreExchanges: ['dydx', 'bitget']
+// });
+let symbol = "ETH/USDT:USDT";
+let bin = await factory["binance"]({ ssm });
+let binTeirs = await bin.fetchLeverageTiers([symbol]);
+console.log(binTeirs);
+let bb = await factory["bybit"]({ ssm });
+let bbTeirs = await bb.fetchMarketLeverageTiers(symbol);
+console.log(bbTeirs);
+let okx = await factory["okx"]({ ssm });
+let okxTeirs = await okx.fetchMarketLeverageTiers(symbol);
+console.log(okxTeirs);
+let gate = await factory["gate"]({ ssm });
+let gateTeirs = await gate.fetchLeverageTiers([symbol], { type: 'swap' });
+console.log(gateTeirs);
+let coinex = await factory["coinex"]({ ssm });
+let coinexTeirs = await coinex.fetchLeverageTiers([symbol]);
+console.log(coinexTeirs);
 process.exit();
 // let tradingState: TradeState = await getTradeState(ssm);
 // let exchangeCache: { [key: string]: ccxt.pro.Exchange } = {};
