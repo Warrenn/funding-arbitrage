@@ -211,12 +211,55 @@ let factory = {
             secret: credentials.secret,
             apiKey: credentials.key,
             enableRateLimit: true,
+            timeout: 99999,
             options: { fetchOrderBookLimit: 5 }
         });
         await ex.loadMarkets();
         return ex;
     }
 };
+function calculateReturn({ longFundRate, shortFundRate, longFee, shortFee, investment, leverage }) {
+    let leveragedAmount = (investment * leverage) / 2;
+    let longIncome = (leveragedAmount * longFundRate) - (leveragedAmount * longFee);
+    let shortIncome = (leveragedAmount * shortFundRate) - (leveragedAmount * shortFee);
+    return longIncome + shortIncome;
+}
+function calculateFee({ longMaker, longTaker, shortMaker, shortTaker }) {
+    if ((longMaker + shortTaker) < (longTaker + shortMaker))
+        return {
+            longFee: longMaker,
+            shortFee: shortTaker,
+            makerSide: 'long'
+        };
+    return {
+        longFee: longTaker,
+        shortFee: shortMaker,
+        makerSide: 'short'
+    };
+}
+function calculateMaxLeverage({ investment, leverageTiers }) {
+    for (let i = leverageTiers.length - 1; i >= 0; i--) {
+        let leverageTier = leverageTiers[i];
+        if (leverageTier.maxLeverage * investment <= leverageTier.maxNotional)
+            continue;
+        return leverageTier.maxNotional / investment;
+    }
+    return 1;
+}
+function calculate({ pair1, pair2, investment }) {
+    let { s: shortCalc, l: longCalc } = (pair1.fundingRate < pair2.fundingRate) ? { l: pair1, s: pair2 } : { l: pair2, s: pair1 };
+    let { longFee, makerSide, shortFee } = calculateFee({ longMaker: longCalc.makerFee, shortMaker: shortCalc.makerFee, longTaker: longCalc.takerFee, shortTaker: shortCalc.takerFee });
+    let leverage = Math.min(shortCalc.maxLeverage, longCalc.maxLeverage);
+    let roi = calculateReturn({
+        leverage,
+        investment,
+        longFee,
+        shortFee,
+        longFundRate: longCalc.fundingRate,
+        shortFundRate: shortCalc.fundingRate
+    });
+    return { roi, makerSide };
+}
 async function getBestTradingPair({ minThreshold, ignoreExchanges, ignoreSymbols }) {
     let secret = await getCoinglassSecret(ssm);
     let response = await fetch('https://open-api.coinglass.com/public/v2/funding', {
@@ -290,27 +333,50 @@ async function getBestTradingPair({ minThreshold, ignoreExchanges, ignoreSymbols
     };
 }
 ;
-// let tp = await getBestTradingPair({
-//     ignoreSymbols: ['1000SHIB', 'SHIB1000', 'PHB', '1000BONK', 'BTCDOM', 'HT', 'TWT', 'T', 'TON', 'ILV', 'FOOTBALL', 'USDC'],
-//     ignoreExchanges: ['dydx', 'bitget']
-// });
-let symbol = "ETH/USDT:USDT";
+let tp = await getBestTradingPair({
+    ignoreSymbols: ['1000SHIB', 'SHIB1000', 'PHB', '1000BONK', 'BTCDOM', 'HT', 'TWT', 'T', 'TON', 'ILV', 'FOOTBALL', 'USDC'],
+    ignoreExchanges: ['dydx', 'bitget']
+});
+let symbol = "DOGE/USDT:USDT";
 let bin = await factory["binance"]({ ssm });
-let binTeirs = await bin.fetchLeverageTiers([symbol]);
-console.log(binTeirs);
-let bb = await factory["bybit"]({ ssm });
-let bbTeirs = await bb.fetchMarketLeverageTiers(symbol);
-console.log(bbTeirs);
-let okx = await factory["okx"]({ ssm });
-let okxTeirs = await okx.fetchMarketLeverageTiers(symbol);
-console.log(okxTeirs);
-let gate = await factory["gate"]({ ssm });
-let gateTeirs = await gate.fetchLeverageTiers([symbol], { type: 'swap' });
-console.log(gateTeirs);
+bin.options['defaultType'] = 'swap';
+let binTiers = await bin.fetchLeverageTiers();
+console.log(binTiers);
+let maxLeverage = calculateMaxLeverage({ investment: 18000, leverageTiers: binTiers[symbol] });
+console.log(maxLeverage);
+// let m = bin.market(symbol);
+// let bb = await factory["bybit"]({ ssm });
+// let bbTiers = await bb.fetchMarketLeverageTiers(symbol);
+// console.log(bbTiers);
+// let okx = await factory["okx"]({ ssm });
+// let okxTiers = await okx.fetchMarketLeverageTiers(symbol);
+// console.log(okxTiers);
+// let gate = await factory["gate"]({ ssm });
+// gate.options['defaultType'] = 'swap';
+// let gateTiers = await gate.fetchLeverageTiers(undefined, { type: 'swap' });
+// console.log(gateTiers);
 let coinex = await factory["coinex"]({ ssm });
-let coinexTeirs = await coinex.fetchLeverageTiers([symbol]);
-console.log(coinexTeirs);
+coinex.options['defaultType'] = 'swap';
+let coinexTiers = await coinex.fetchLeverageTiers();
+console.log(coinexTiers);
+//for each coin
+// for each perp exchange
+//  get the perpetual
+// for each spot exchange
+//  get the spot
+function getCalculations({}) {
+    return [];
+}
+maxLeverage = calculateMaxLeverage({ investment: 18000, leverageTiers: coinex[symbol] });
+console.log(maxLeverage);
 process.exit();
+//get the leverageTeirs for each symbol that we get from coinglass
+//calculate the max ROI for each symbol exchange pair
+//return the symbol exchange pair with the max ROI
+//include the Spot/Kucoin alternative
+//set risk level
+//set leverage
+//withdraw and deposit
 // let tradingState: TradeState = await getTradeState(ssm);
 // let exchangeCache: { [key: string]: ccxt.pro.Exchange } = {};
 // exchangeCache['binance'] = await factory['binance']({ ssm });
