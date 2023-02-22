@@ -2,6 +2,7 @@ import ccxt, { ExchangePro, Order } from 'ccxt';
 
 export type GetPriceFunction = ({ side, bid, ask }: { side: Order["side"], bid: number, ask: number }) => number;
 export type ExchangeFactory = ({ ssm, apiCredentialsKeyPrefix }: { ssm: AWS.SSM, apiCredentialsKeyPrefix: string }) => Promise<ccxt.ExchangePro>;
+export type FetchOpenStopOrdersFunction = (symbol: string, since?: number, limit?: number, params?: ccxt.Params) => Promise<ccxt.Order[]>
 export type GetFuturesCalculationFunction = ({
     coin,
     coinGlassData,
@@ -76,20 +77,47 @@ export type RoiTradePair = {
     shortExchange: string,
     longSymbol: string,
     shortSymbol: string,
+    longRiskIndex: string,
+    shortRiskIndex: string,
     leverage: number
+}
+
+export type LeverageTier = {
+    maxLeverage: number,
+    maxNotional: number,
+    tier: number,
+    currency: string,
+    minNotional: number,
+    maintenanceMarginRate: number,
+    info: any
 }
 
 export type CoinGlassData = { [coin: string]: { [exchange: string]: number } }
 
+function calculateMaxLeverage({
+    investment,
+    leverageTiers
+}: {
+    investment: number,
+    leverageTiers: LeverageTier[]
+}): number {
+    for (let i = leverageTiers.length - 1; i >= 0; i--) {
+        let leverageTier = leverageTiers[i];
+        if (leverageTier.maxLeverage * investment < leverageTier.maxNotional) continue;
+        return leverageTier.maxNotional / investment
+    }
+    return 1;
+}
 export class binance2 extends ccxt.pro.binance {
     async fetchPosition(symbol: string, params?: ccxt.Params | undefined): Promise<any> {
         let [position] = await super.fetchPositions([symbol], params);
         return position;
     }
 
-    async fetchOpenStopOrders(symbol: string, since?: number, limit?: number, params?: ccxt.Params): Promise<ccxt.Order[]> {
-        return super.fetchOpenOrders(symbol, since, limit, params);
-    }
+    public fetchOpenStopOrders: FetchOpenStopOrdersFunction =
+        async (symbol: string, since?: number, limit?: number, params?: ccxt.Params): Promise<ccxt.Order[]> => {
+            return super.fetchOpenOrders(symbol, since, limit, params);
+        }
 }
 
 export class gate2 extends ccxt.pro.gateio {
@@ -130,9 +158,10 @@ export class gate2 extends ccxt.pro.gateio {
         return await super.fetchOrder(id, symbol, { ...params, stop: true });
     }
 
-    async fetchOpenStopOrders(symbol: string, since?: number, limit?: number, params?: ccxt.Params): Promise<ccxt.Order[]> {
-        return super.fetchOpenOrders(symbol, since, limit, { ...params, stop: true });
-    }
+    public fetchOpenStopOrders: FetchOpenStopOrdersFunction =
+        async (symbol: string, since?: number, limit?: number, params?: ccxt.Params): Promise<ccxt.Order[]> => {
+            return super.fetchOpenOrders(symbol, since, limit, { ...params, stop: true });
+        }
 
     async fetchPosition(symbol: string, params?: ccxt.Params | undefined): Promise<any> {
         let [position] = await super.fetchPositions([symbol], params);
@@ -142,9 +171,10 @@ export class gate2 extends ccxt.pro.gateio {
 
 export class bybit2 extends ccxt.pro.bybit {
 
-    async fetchOpenStopOrders(symbol: string, since?: number, limit?: number, params?: ccxt.Params): Promise<ccxt.Order[]> {
-        return super.fetchOpenOrders(symbol, since, limit, params);
-    }
+    public fetchOpenStopOrders: FetchOpenStopOrdersFunction =
+        async (symbol: string, since?: number, limit?: number, params?: ccxt.Params): Promise<ccxt.Order[]> => {
+            return super.fetchOpenOrders(symbol, since, limit, params);
+        }
 }
 
 export class coinex2 extends ccxt.pro.coinex {
@@ -157,9 +187,10 @@ export class coinex2 extends ccxt.pro.coinex {
         return position;
     }
 
-    async fetchOpenStopOrders(symbol: string, since?: number, limit?: number, params?: ccxt.Params): Promise<ccxt.Order[]> {
-        return super.fetchOpenOrders(symbol, since, limit, params);
-    }
+    public fetchOpenStopOrders: FetchOpenStopOrdersFunction =
+        async (symbol: string, since?: number, limit?: number, params?: ccxt.Params): Promise<ccxt.Order[]> => {
+            return super.fetchOpenOrders(symbol, since, limit, params);
+        }
 }
 
 export class okx2 extends ccxt.pro.okex {
@@ -178,9 +209,10 @@ export class okx2 extends ccxt.pro.okex {
         }
     }
 
-    async fetchOpenStopOrders(symbol: string, since?: number, limit?: number, params?: ccxt.Params): Promise<ccxt.Order[]> {
-        return super.fetchOpenOrders(symbol, since, limit, { ...params, ordType: 'conditional' });
-    }
+    public fetchOpenStopOrders: FetchOpenStopOrdersFunction =
+        async (symbol: string, since?: number, limit?: number, params?: ccxt.Params): Promise<ccxt.Order[]> => {
+            return super.fetchOpenOrders(symbol, since, limit, { ...params, ordType: 'conditional' });
+        }
 
     async fetchOrder(id: string, symbol: string, params?: ccxt.Params | undefined): Promise<ccxt.Order> {
         let openParams: any = { ordType: 'conditional', algoId: id };

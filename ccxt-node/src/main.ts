@@ -192,21 +192,6 @@ function calculateFee({
     }
 }
 
-// function calculateMaxLeverage({
-//     investment,
-//     leverageTiers
-// }: {
-//     investment: number,
-//     leverageTiers: LeverageTier[]
-// }): number {
-//     for (let i = leverageTiers.length - 1; i >= 0; i--) {
-//         let leverageTier = leverageTiers[i];
-//         if (leverageTier.maxLeverage * investment < leverageTier.maxNotional) continue;
-//         return leverageTier.maxNotional / investment
-//     }
-//     return 1;
-// }
-
 function calculateRoi({
     pair1,
     pair2,
@@ -235,7 +220,9 @@ function calculateRoi({
         longExchange: longCalc.exchange,
         longSymbol: longCalc.symbol,
         shortExchange: shortCalc.exchange,
-        shortSymbol: shortCalc.symbol
+        shortSymbol: shortCalc.symbol,
+        longRiskIndex: longCalc.riskIndex,
+        shortRiskIndex: shortCalc.riskIndex
     };
 }
 
@@ -284,7 +271,7 @@ export async function calculateBestRoiTradePair({
                     bestTradePair = roi;
                     continue;
                 }
-                if (roi.roi < bestTradePair.roi) continue;
+                if (roi.roi <= bestTradePair.roi) continue;
                 bestTradePair = roi;
             }
         }
