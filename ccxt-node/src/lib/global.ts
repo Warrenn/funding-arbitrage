@@ -216,7 +216,7 @@ export function calculateMaxLeverage({
 }): {
     maxLeverage: number,
     tier: LeverageTier
-} | undefined {
+} {
 
     for (let i = leverageTiers.length - 1; i >= 0; i--) {
         let tier = leverageTiers[i];
@@ -231,7 +231,15 @@ export function calculateMaxLeverage({
             tier
         }
     }
-    return undefined;
+    let tier = leverageTiers[leverageTiers.length];
+    let maxTradableNotion = (currentPrice) ?
+        currentPrice * contractSize * tier.maxNotional :
+        tier.maxNotional;
+    let maxLeverage = maxTradableNotion / investment;
+    return {
+        maxLeverage,
+        tier
+    }
 }
 
 function processFundingRatesChains(processinglinks: FundingRatesChainFunction[]) {
@@ -319,13 +327,11 @@ export async function calculateBestRoiTradePair({
                     if (reference.riskLevels?.type == 'base') {
                         currentPrice = (await exchange.fetchOHLCV(symbol, undefined, undefined, 1))[0][4];
                     }
-                    let calculation = calculateMaxLeverage({ investment, leverageTiers, contractSize, currentPrice });
-                    if (calculation) {
-                        longLeverage = calculation.maxLeverage;
-                        shortLeverage = calculation.maxLeverage;
-                        maxLeverage = calculation.tier.maxLeverage;
-                        riskIndex = `${calculation.tier.tier}`;
-                    }
+                    let calculation = calculateMaxLeverage({ investment: investmentInLeg, leverageTiers, contractSize, currentPrice });
+                    longLeverage = calculation.maxLeverage;
+                    shortLeverage = calculation.maxLeverage;
+                    maxLeverage = calculation.tier.maxLeverage;
+                    riskIndex = `${calculation.tier.tier}`;
                 }
 
                 let coinCalculation: FundingRateCalculation = {
