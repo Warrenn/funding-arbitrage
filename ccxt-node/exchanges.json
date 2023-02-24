@@ -1,0 +1,16 @@
+{
+    "exchanges": [
+        "binance",
+        "bybit",
+        "okx",
+        "gate",
+        "coinex",
+        "kucoin",
+        "mexc"
+    ],
+    "margin": [
+        "okx",
+        "gate",
+        "mexc"
+    ]
+}
