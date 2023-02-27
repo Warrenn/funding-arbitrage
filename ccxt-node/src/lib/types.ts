@@ -1,30 +1,23 @@
 import ccxt, { ExchangePro, Order } from 'ccxt';
 
 export type MakerSide = 'long' | 'short';
-export type TradeType = 'swap' | 'margin';
 export type SymbolType = 'quote' | 'base';
 export type GetPriceFunction = ({ side, bid, ask }: { side: Order["side"], bid: number, ask: number }) => number;
 export type ExchangeFactory = ({ ssm, apiCredentialsKeyPrefix }: { ssm: AWS.SSM, apiCredentialsKeyPrefix: string }) => Promise<ccxt.ExchangePro>;
 export type FetchOpenStopOrdersFunction = (symbol: string, since?: number, limit?: number, params?: ccxt.Params) => Promise<ccxt.Order[]>
-export type FundingRatesChainFunction = (fundingRates: FundingRates, coins: string[], nextFundingHour: number) => Promise<FundingRates>;
+export type FundingRatesChainFunction = (fundingRates: FundingRates, nextFundingHour: number) => Promise<FundingRates>;
 
 export type TradePairReferenceData = {
     [coin: string]: {
         [exchange: string]: {
             [tradePair: string]: {
-                type: TradeType,
                 makerFee: number,
                 takerFee: number,
-                riskLevels?: {
+                riskLevels: {
                     type: SymbolType,
                     contractSize?: number,
                     levels: LeverageTier[]
-                },
-                shortFee?: number,
-                longFee?: number,
-                quoteBorrowLimit?: number,
-                baseBorrowLimit?: number,
-                marginMaxLeverage?: number
+                }
             }
         }
     }
@@ -81,11 +74,8 @@ export type FundingRateCalculation = {
     rate: number,
     makerFee: number,
     takerFee: number,
-    longFee: number,
-    shortFee: number,
     maxLeverage: number,
-    longLeverage: number,
-    shortLeverage: number,
+    maxTierLeverage: number,
     riskIndex?: string
 }
 

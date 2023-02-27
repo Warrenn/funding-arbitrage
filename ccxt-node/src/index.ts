@@ -21,7 +21,10 @@ import {
     openSellOrdersSize,
     remainingStopLoss,
     remainingTakeProfit,
-    saveTradeState
+    saveTradeState,
+    calculateBestRoiTradingPairs,
+    processFundingRatesPipeline,
+    getCoinGlassData
 } from './lib/global.js';
 
 dotenv.config({ override: true });
@@ -82,6 +85,15 @@ while (true) {
         let longRequirement = getPositionSize(longPosition);
         let shortRequirement = getPositionSize(shortPosition);
 
+        //open position: while the takerPosition Size > makerPosition size
+        //while Math.abs(takerSize - makerSize) > orderSize
+        //  placeImmediateOrder(makerExchange, orderSize)
+
+        //if all orders are complete
+        //check the position size if not desired size
+        //place one or more orders of size
+        //if orders are driffted close existing orders and place one or more orders of size
+
         let longSellSize = await openSellOrdersSize({ exchange: longExchange, symbol: tradingState.longSymbol, position: longPosition });
         let shortBuySize = await openBuyOrdersSize({ exchange: shortExchange, symbol: tradingState.shortSymbol, position: shortPosition });
 
@@ -128,10 +140,17 @@ while (true) {
     }
 
     if (tradingState.state == 'closed' && currentHour >= nextOnboardingHour) {
-        //todo: calculate the next trading state
-
-        tradingState.state = 'open';
-        await saveTradeState({ ssm, state: tradingState, tradeStatusKey });
+        let coinGlassLink = await getCoinGlassData({ ssm, coinglassSecretKey });
+        
+        let fundingRates = await processFundingRatesPipeline([coinGlassLink])({ nextFundingHour: nextTradingHour });
+        let tradePairs = await calculateBestRoiTradingPairs({
+            fundingRates,
+            exchangeCache,
+            investment: 1000,
+            referenceData: {}
+        });
+        console.log(tradePairs);
+        //await saveTradeState({ ssm, state: tradingState, tradeStatusKey });
     }
 
     if (tradingState.state == 'open' && tradingState.fundingHour == nextTradingHour) {

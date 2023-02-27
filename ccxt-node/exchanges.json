@@ -6,7 +6,8 @@
         "gate",
         "coinex",
         "kucoin",
-        "mexc"
+        "mexc",
+        "xt"
     ],
     "margin": [
         "okx",
