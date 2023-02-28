@@ -1,10 +1,15 @@
 import { setTimeout as asyncSleep } from 'timers/promises';
+import fs from 'fs';
 import ccxt, { ExchangePro, Order } from 'ccxt';
 import AWS from 'aws-sdk';
 import dotenv from 'dotenv';
+import referenceData from './refData.json';
 
 import {
     BybitExchange,
+    LeverageTier,
+    SymbolType,
+    TradePairReferenceData,
     TradeState
 } from './lib/types.js';
 
@@ -44,6 +49,8 @@ exchangeCache['bybit'] = await factory['bybit']({ ssm, apiCredentialsKeyPrefix }
 exchangeCache['gate'] = await factory['gate']({ ssm, apiCredentialsKeyPrefix });
 exchangeCache['coinex'] = await factory['coinex']({ ssm, apiCredentialsKeyPrefix });
 
+process.exit();
+/** 
 let tradingState: TradeState = await getTradeState({ ssm, tradeStatusKey });
 
 //need to initialize accounts before opening position
@@ -141,155 +148,162 @@ while (true) {
 
     if (tradingState.state == 'closed' && currentHour >= nextOnboardingHour) {
         let coinGlassLink = await getCoinGlassData({ ssm, coinglassSecretKey });
-        
-        let fundingRates = await processFundingRatesPipeline([coinGlassLink])({ nextFundingHour: nextTradingHour });
-        let tradePairs = await calculateBestRoiTradingPairs({
-            fundingRates,
-            exchangeCache,
-            investment: 1000,
-            referenceData: {}
-        });
-        console.log(tradePairs);
-        //await saveTradeState({ ssm, state: tradingState, tradeStatusKey });
-    }
 
-    if (tradingState.state == 'open' && tradingState.fundingHour == nextTradingHour) {
-        let longExchange = exchangeCache[tradingState.longExchange];
-        let shortExchange = exchangeCache[tradingState.shortExchange];
+        let fundingRates = await processFundingRatesPipeline([
+            coinGlassLink/*
+            filterCoins,
+            kucoinRates,
+            mexcRates,
+            poloniexRates,
+            xtRates
+        *//*])({ nextFundingHour: nextTradingHour });
+let tradePairs = await calculateBestRoiTradingPairs({
+fundingRates,
+exchangeCache,
+investment: 1000,
+referenceData: {}
+});
+console.log(tradePairs);
+//await saveTradeState({ ssm, state: tradingState, tradeStatusKey });
+}
 
-        let longPosition = await longExchange.fetchPosition(tradingState.longSymbol);
-        let shortPosition = await shortExchange.fetchPosition(tradingState.shortSymbol);
+if (tradingState.state == 'open' && tradingState.fundingHour == nextTradingHour) {
+let longExchange = exchangeCache[tradingState.longExchange];
+let shortExchange = exchangeCache[tradingState.shortExchange];
 
-        await longExchange.cancelAllOrders(tradingState.longSymbol);
-        await shortExchange.cancelAllOrders(tradingState.shortSymbol);
+let longPosition = await longExchange.fetchPosition(tradingState.longSymbol);
+let shortPosition = await shortExchange.fetchPosition(tradingState.shortSymbol);
 
-        let currentLongSize = getPositionSize(longPosition);
-        let currentShortSize = getPositionSize(shortPosition);
-        let positionSize = tradingState.positionSize;
+await longExchange.cancelAllOrders(tradingState.longSymbol);
+await shortExchange.cancelAllOrders(tradingState.shortSymbol);
 
-        let longRequirement = positionSize - currentLongSize;
-        let shortRequirement = positionSize - currentShortSize;
+let currentLongSize = getPositionSize(longPosition);
+let currentShortSize = getPositionSize(shortPosition);
+let positionSize = tradingState.positionSize;
 
-        let longBuySize = await openBuyOrdersSize({ exchange: longExchange, symbol: tradingState.longSymbol, position: longPosition });
-        let shortSellSize = await openSellOrdersSize({ exchange: shortExchange, symbol: tradingState.shortSymbol, position: shortPosition });
+let longRequirement = positionSize - currentLongSize;
+let shortRequirement = positionSize - currentShortSize;
 
-        longRequirement = longRequirement - longBuySize;
-        shortRequirement = shortRequirement - shortSellSize;
+let longBuySize = await openBuyOrdersSize({ exchange: longExchange, symbol: tradingState.longSymbol, position: longPosition });
+let shortSellSize = await openSellOrdersSize({ exchange: shortExchange, symbol: tradingState.shortSymbol, position: shortPosition });
 
-        let longMarket = longExchange.market(tradingState.longSymbol);
-        let shortMarket = shortExchange.market(tradingState.shortSymbol);
+longRequirement = longRequirement - longBuySize;
+shortRequirement = shortRequirement - shortSellSize;
 
-        let {
-            longOrderCount,
-            longSize,
-            shortSize,
-            shortOrderCount,
-            trailingLong,
-            trailingShort
-        } = calculateOrderSizes({
-            idealOrderSize: tradingState.idealOrderSize,
-            longMarket,
-            shortMarket,
-            longRequirement,
-            shortRequirement
-        });
+let longMarket = longExchange.market(tradingState.longSymbol);
+let shortMarket = shortExchange.market(tradingState.shortSymbol);
 
-        await openPositions({
-            longExchange,
-            longOrderCount,
-            longSize,
-            longSymbol: tradingState.longSymbol,
-            shortExchange,
-            shortOrderCount,
-            shortSize,
-            trailingLong,
-            trailingShort,
-            shortSymbol: tradingState.shortSymbol,
-            makerSide: tradingState.makerSide
-        });
+let {
+longOrderCount,
+longSize,
+shortSize,
+shortOrderCount,
+trailingLong,
+trailingShort
+} = calculateOrderSizes({
+idealOrderSize: tradingState.idealOrderSize,
+longMarket,
+shortMarket,
+longRequirement,
+shortRequirement
+});
 
-        longPosition = await longExchange.fetchPosition(tradingState.longSymbol);
-        shortPosition = await shortExchange.fetchPosition(tradingState.shortSymbol);
+await openPositions({
+longExchange,
+longOrderCount,
+longSize,
+longSymbol: tradingState.longSymbol,
+shortExchange,
+shortOrderCount,
+shortSize,
+trailingLong,
+trailingShort,
+shortSymbol: tradingState.shortSymbol,
+makerSide: tradingState.makerSide
+});
 
-        let remainingShortSl = await remainingStopLoss({ exchange: shortExchange, position: shortPosition, symbol: tradingState.shortSymbol });
-        let remainingLongSl = await remainingStopLoss({ exchange: longExchange, position: longPosition, symbol: tradingState.longSymbol });
+longPosition = await longExchange.fetchPosition(tradingState.longSymbol);
+shortPosition = await shortExchange.fetchPosition(tradingState.shortSymbol);
 
-        ({
-            longOrderCount,
-            longSize,
-            shortSize,
-            shortOrderCount,
-            trailingLong,
-            trailingShort
-        } = calculateOrderSizes({
-            idealOrderSize: 3,
-            longMarket,
-            shortMarket,
-            longRequirement: remainingLongSl,
-            shortRequirement: remainingShortSl
-        }));
+let remainingShortSl = await remainingStopLoss({ exchange: shortExchange, position: shortPosition, symbol: tradingState.shortSymbol });
+let remainingLongSl = await remainingStopLoss({ exchange: longExchange, position: longPosition, symbol: tradingState.longSymbol });
 
-        await createSlOrders({
-            limit: settings.tpSlLimit,
-            trigger: settings.tpSlTrigger,
-            longExchange,
-            longMarket,
-            longOrderCount,
-            longPosition,
-            longSize,
-            longSymbol: tradingState.longSymbol,
-            shortExchange,
-            shortMarket,
-            shortOrderCount,
-            shortPosition,
-            shortSize,
-            shortSymbol: tradingState.shortSymbol,
-            trailingLong,
-            trailingShort
-        });
+({
+longOrderCount,
+longSize,
+shortSize,
+shortOrderCount,
+trailingLong,
+trailingShort
+} = calculateOrderSizes({
+idealOrderSize: 3,
+longMarket,
+shortMarket,
+longRequirement: remainingLongSl,
+shortRequirement: remainingShortSl
+}));
 
-        let remainingShortTp = await remainingTakeProfit({ exchange: shortExchange, position: shortPosition, symbol: tradingState.shortSymbol });
-        let remainingLongTp = await remainingTakeProfit({ exchange: longExchange, position: longPosition, symbol: tradingState.longSymbol });
+await createSlOrders({
+limit: settings.tpSlLimit,
+trigger: settings.tpSlTrigger,
+longExchange,
+longMarket,
+longOrderCount,
+longPosition,
+longSize,
+longSymbol: tradingState.longSymbol,
+shortExchange,
+shortMarket,
+shortOrderCount,
+shortPosition,
+shortSize,
+shortSymbol: tradingState.shortSymbol,
+trailingLong,
+trailingShort
+});
 
-        ({
-            longOrderCount,
-            longSize,
-            shortSize,
-            shortOrderCount,
-            trailingLong,
-            trailingShort
-        } = calculateOrderSizes({
-            idealOrderSize: tradingState.idealOrderSize,
-            longMarket,
-            shortMarket,
-            longRequirement: remainingLongTp,
-            shortRequirement: remainingShortTp
-        }));
+let remainingShortTp = await remainingTakeProfit({ exchange: shortExchange, position: shortPosition, symbol: tradingState.shortSymbol });
+let remainingLongTp = await remainingTakeProfit({ exchange: longExchange, position: longPosition, symbol: tradingState.longSymbol });
 
-        await createTpOrders({
-            limit: settings.tpSlLimit,
-            trigger: settings.tpSlTrigger,
-            longExchange,
-            longMarket,
-            longOrderCount,
-            longPosition,
-            longSize,
-            longSymbol: tradingState.longSymbol,
-            shortExchange,
-            shortMarket,
-            shortOrderCount,
-            shortPosition,
-            shortSize,
-            shortSymbol: tradingState.shortSymbol,
-            trailingLong,
-            trailingShort
-        });
+({
+longOrderCount,
+longSize,
+shortSize,
+shortOrderCount,
+trailingLong,
+trailingShort
+} = calculateOrderSizes({
+idealOrderSize: tradingState.idealOrderSize,
+longMarket,
+shortMarket,
+longRequirement: remainingLongTp,
+shortRequirement: remainingShortTp
+}));
 
-        tradingState.state = 'filled';
-        await saveTradeState({ ssm, state: tradingState, tradeStatusKey });
-    }
+await createTpOrders({
+limit: settings.tpSlLimit,
+trigger: settings.tpSlTrigger,
+longExchange,
+longMarket,
+longOrderCount,
+longPosition,
+longSize,
+longSymbol: tradingState.longSymbol,
+shortExchange,
+shortMarket,
+shortOrderCount,
+shortPosition,
+shortSize,
+shortSymbol: tradingState.shortSymbol,
+trailingLong,
+trailingShort
+});
 
-    await asyncSleep(5000);
+tradingState.state = 'filled';
+await saveTradeState({ ssm, state: tradingState, tradeStatusKey });
+}
+
+await asyncSleep(5000);
 }
 
 //adjust risk limit for each exchange
@@ -342,3 +356,4 @@ while (true) {
 //openingEvent
 //fundingEvent
 //closingEvent
+*/

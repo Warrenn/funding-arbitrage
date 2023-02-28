@@ -41,7 +41,12 @@ export const factory = {
             password: credentials.password,
             nonce: () => new Date((new Date()).toUTCString()).getTime(),
             enableRateLimit: true,
-            options: { fetchOrderBookLimit: 5 }
+            options: {
+                'fetchTimeOffsetBeforeAuth': true,
+                'recvWindow': 59999,
+                fetchOrderBookLimit: 5
+            },
+            timeout: 99999
         });
         if (apiCredentialsKeyPrefix.match(/\/dev\//))
             ex.setSandboxMode(true);
@@ -114,6 +119,7 @@ export async function getCoinGlassData({ ssm, coinglassSecretKey }) {
                 let rate = marginData.rate;
                 if (!rate)
                     continue;
+                fundingRates[symbol][exchange] = Object.assign({}, fundingRates[symbol][exchange]);
                 fundingRates[symbol][exchange][`${symbol}/USDT:USDT`] = rate;
             }
         }
