@@ -145,8 +145,8 @@ export function calculateRoi({ calculation1, calculation2, investment }) {
     let longIncome = (leveragedAmount * longCalc.rate);
     let shortIncome = (leveragedAmount * shortCalc.rate);
     let roi = Math.abs(longIncome - shortIncome)
-        - (leveragedAmount * longFee)
-        - (leveragedAmount * shortFee);
+        - (leveragedAmount * longFee * 2)
+        - (leveragedAmount * shortFee * 2);
     return {
         roi,
         makerSide,

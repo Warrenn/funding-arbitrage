@@ -59,7 +59,7 @@ let fundingRates = await processFundingRatesPipeline([coinGlassLink])({ nextFund
 let tradePairs = await calculateBestRoiTradingPairs({
     fundingRates,
     exchangeCache,
-    investment: 1000,
+    investment: 100,
     referenceData
 });
 
@@ -68,11 +68,6 @@ console.log(tradePairs[0]);
 process.exit();
 /** 
 let tradingState: TradeState = await getTradeState({ ssm, tradeStatusKey });
-
-//need to initialize accounts before opening position
-//  for margin call borrow from margin account
-//need to finalize accounts aftore closing position
-//  for margin call repay all borrowed amounts
 
 //multiple trading selected pairs
 //multiple concurrent position opening/closing orders
