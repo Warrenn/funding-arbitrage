@@ -74,8 +74,8 @@ export type FundingRateCalculation = {
     rate: number,
     makerFee: number,
     takerFee: number,
+    calculatedLeverage: number,
     maxLeverage: number,
-    maxTierLeverage: number,
     riskIndex?: string
 }
 

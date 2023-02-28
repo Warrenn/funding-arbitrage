@@ -140,7 +140,7 @@ export function calculateRoi({ calculation1, calculation2, investment }) {
         shortFee: shortCalc.makerFee,
         makerSide: 'short'
     };
-    let leverage = Math.min(shortCalc.maxLeverage, longCalc.maxLeverage);
+    let leverage = Math.min(shortCalc.calculatedLeverage, longCalc.calculatedLeverage);
     let leveragedAmount = (investment * leverage) / 2;
     let longIncome = (leveragedAmount * longCalc.rate);
     let shortIncome = (leveragedAmount * shortCalc.rate);
@@ -170,19 +170,15 @@ export function calculateMaxLeverage({ investment, leverageTiers, contractSize =
             tier.maxNotional;
         if (leveragedInvestment < maxTradableNotion)
             continue;
-        let maxLeverage = maxTradableNotion / investment;
+        let calculatedLeverage = maxTradableNotion / investment;
         return {
-            maxLeverage,
+            calculatedLeverage,
             tier
         };
     }
-    let tier = leverageTiers[leverageTiers.length];
-    let maxTradableNotion = (currentPrice) ?
-        currentPrice * contractSize * tier.maxNotional :
-        tier.maxNotional;
-    let maxLeverage = maxTradableNotion / investment;
+    let tier = leverageTiers[0];
     return {
-        maxLeverage,
+        calculatedLeverage: tier.maxLeverage,
         tier
     };
 }
@@ -218,7 +214,7 @@ export async function calculateBestRoiTradingPairs({ minThreshold, exchangeCache
                 if (!(symbol in referenceData[coin][exchangeName]))
                     continue;
                 let reference = referenceData[coin][exchangeName][symbol];
-                let rate = fundingRates[coin][exchangeName][symbol];
+                let rate = fundingRates[coin][exchangeName][symbol] / 100;
                 let leverageTiers = ((_a = reference.riskLevels) === null || _a === void 0 ? void 0 : _a.levels) || [];
                 let contractSize = (_b = reference.riskLevels) === null || _b === void 0 ? void 0 : _b.contractSize;
                 let currentPrice = undefined;
@@ -226,16 +222,16 @@ export async function calculateBestRoiTradingPairs({ minThreshold, exchangeCache
                     currentPrice = (await exchange.fetchOHLCV(symbol, undefined, undefined, 1))[0][4];
                 }
                 let calculation = calculateMaxLeverage({ investment: investmentInLeg, leverageTiers, contractSize, currentPrice });
-                let maxTierLeverage = calculation.tier.maxLeverage;
-                let maxLeverage = calculation.maxLeverage;
+                let maxLeverage = calculation.tier.maxLeverage;
+                let calculatedLeverage = calculation.calculatedLeverage;
                 let riskIndex = `${calculation.tier.tier}`;
                 let coinCalculation = {
                     exchange: exchangeName,
                     symbol,
-                    maxTierLeverage,
+                    maxLeverage,
                     makerFee: reference.makerFee,
                     takerFee: reference.takerFee,
-                    maxLeverage,
+                    calculatedLeverage,
                     rate,
                     riskIndex
                 };
@@ -251,22 +247,22 @@ export async function calculateBestRoiTradingPairs({ minThreshold, exchangeCache
                 coinTradePairs.push(roi);
             }
         }
-        let sortedCoinPairs = coinTradePairs.sort((a, b) => a.roi - b.roi);
+        let sortedCoinPairs = coinTradePairs.sort((a, b) => b.roi - a.roi);
         let filteredPairs = [];
-        let filteredSymbols = [];
+        let filteredExchanges = [];
         for (let i = 0; i < sortedCoinPairs.length; i++) {
             let roiTradePair = sortedCoinPairs[i];
-            let longSymbol = roiTradePair.longSymbol;
-            let shortSymbol = roiTradePair.shortSymbol;
-            if (filteredSymbols.indexOf(longSymbol) > -1 || filteredSymbols.indexOf(shortSymbol) > -1)
+            let longExchange = roiTradePair.longExchange;
+            let shortExchange = roiTradePair.shortExchange;
+            if (filteredExchanges.indexOf(longExchange) > -1 || filteredExchanges.indexOf(shortExchange) > -1)
                 continue;
-            filteredSymbols.push(longSymbol);
-            filteredSymbols.push(shortSymbol);
+            filteredExchanges.push(longExchange);
+            filteredExchanges.push(shortExchange);
             filteredPairs.push(roiTradePair);
         }
         bestTradingPairs = [...bestTradingPairs, ...filteredPairs];
     }
-    let sortedPairs = bestTradingPairs.sort((a, b) => a.roi - b.roi);
+    let sortedPairs = bestTradingPairs.sort((a, b) => b.roi - a.roi);
     return sortedPairs;
 }
 ;

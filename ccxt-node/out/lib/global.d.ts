@@ -37,7 +37,7 @@ export declare function calculateMaxLeverage({ investment, leverageTiers, contra
     contractSize?: number;
     currentPrice?: number;
 }): {
-    maxLeverage: number;
+    calculatedLeverage: number;
     tier: LeverageTier;
 };
 export declare function processFundingRatesPipeline(processinglinks: FundingRatesChainFunction[]): ({ nextFundingHour }: {

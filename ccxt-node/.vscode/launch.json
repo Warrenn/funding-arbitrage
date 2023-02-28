@@ -20,6 +20,23 @@
                 "${workspaceFolder}/out/**/*.js"
             ],
             "console": "internalConsole"
-        }
+        },
+        {
+            "type": "node",
+            "request": "launch",
+            "name": "Launch generate",
+            "program": "${workspaceFolder}/src/generateRefData.ts",
+            "preLaunchTask": "tsc: build - tsconfig.json",
+            "env": {
+                "AWS_PROFILE": "busyweb_admin",
+                "AWS_SDK_LOAD_CONFIG": "true",
+                "AWS_ACCESS_KEY_ID": "",
+                "AWS_SECRET_ACCESS_KEY": ""
+            },
+            "outFiles": [
+                "${workspaceFolder}/out/**/*.js"
+            ],
+            "console": "internalConsole"
+        }        
     ]
 }

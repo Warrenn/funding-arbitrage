@@ -1,5 +1,5 @@
-import { factory, getCoinGlassData } from "./lib/global";
-import { LeverageTier, SymbolType, TradePairReferenceData } from "./lib/types";
+import { factory, getCoinGlassData } from "./lib/global.js";
+import { LeverageTier, SymbolType, TradePairReferenceData } from "./lib/types.js";
 import { setTimeout as asyncSleep } from 'timers/promises';
 import fs from 'fs';
 import ccxt, { ExchangePro, Order } from 'ccxt';
@@ -28,6 +28,19 @@ let refData: TradePairReferenceData = {};
 let coinGlassLink = await getCoinGlassData({ ssm, coinglassSecretKey });
 let fundingRates = await coinGlassLink({}, 0);
 let coins = Object.keys(fundingRates);
+// let bybitTiers: { [key: string]: LeverageTier[] } = {};
+// let markets = exchangeCache["bybit"].markets;
+
+// for (let i = 0; i < coins.length; i++) {
+//     let coin = coins[i];
+//     let symbol = `${coin}/USDT:USDT`;
+//     if (!(symbol in markets)) continue;
+//     let tiers = await exchangeCache['bybit'].fetchMarketLeverageTiers(symbol);
+//     bybitTiers[symbol] = tiers;
+// }
+
+// await fs.promises.writeFile('./bybit2.leverageTiers.json', JSON.stringify(bybitTiers, undefined, 3), { encoding: 'utf8' });
+
 let fees: {
     [key: string]: {
         makerFee: number,

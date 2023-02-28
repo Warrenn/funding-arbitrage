@@ -1,9 +1,9 @@
 import { setTimeout as asyncSleep } from 'timers/promises';
 import fs from 'fs';
+import path from 'path';
 import ccxt, { ExchangePro, Order } from 'ccxt';
 import AWS from 'aws-sdk';
 import dotenv from 'dotenv';
-import referenceData from './refData.json';
 
 import {
     BybitExchange,
@@ -38,7 +38,8 @@ const
     apiCredentialsKeyPrefix = `${process.env.API_CRED_KEY_PREFIX}`,
     tradeStatusKey = `${process.env.TRADE_STATUS_KEY}`,
     coinglassSecretKey = `${process.env.COINGLASS_SECRET_KEY}`,
-    region = `${process.env.CCXT_NODE_REGION}`;
+    region = `${process.env.CCXT_NODE_REGION}`,
+    refDataFile = `${process.env.REF_DATA_FILE}`;
 
 let ssm = new AWS.SSM({ region });
 
@@ -48,6 +49,21 @@ exchangeCache['okx'] = await factory['okx']({ ssm, apiCredentialsKeyPrefix });
 exchangeCache['bybit'] = await factory['bybit']({ ssm, apiCredentialsKeyPrefix });
 exchangeCache['gate'] = await factory['gate']({ ssm, apiCredentialsKeyPrefix });
 exchangeCache['coinex'] = await factory['coinex']({ ssm, apiCredentialsKeyPrefix });
+
+let filePath = path.resolve(refDataFile);
+let referenceData: TradePairReferenceData = JSON.parse(await fs.promises.readFile(filePath, { encoding: 'utf8' }))
+
+let coinGlassLink = await getCoinGlassData({ ssm, coinglassSecretKey });
+
+let fundingRates = await processFundingRatesPipeline([coinGlassLink])({ nextFundingHour: 16 });
+let tradePairs = await calculateBestRoiTradingPairs({
+    fundingRates,
+    exchangeCache,
+    investment: 1000,
+    referenceData
+});
+
+console.log(tradePairs[0]);
 
 process.exit();
 /** 
