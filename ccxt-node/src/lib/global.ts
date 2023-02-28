@@ -114,6 +114,15 @@ export const factory: { [key: string]: ExchangeFactory } = {
     }
 }
 
+export async function sandBoxFundingRateLink(fundingRates: FundingRates, nextFundingHour: number): Promise<FundingRates> {
+    let coins = Object.keys(fundingRates);
+    for (let i = 0; i < coins.length; i++) {
+        let coin = coins[i];
+        if ('coinex' in fundingRates[coin]) delete fundingRates[coin]['coinex'];
+    }
+    return fundingRates;
+}
+
 export async function getCoinGlassData({
     ssm,
     coinglassSecretKey
