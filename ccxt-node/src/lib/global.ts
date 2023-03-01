@@ -47,7 +47,7 @@ export async function getSettings({ ssm, settingsPrefix }: { ssm: AWS.SSM, setti
     return JSON.parse(`${ssmParam.Parameter?.Value}`);
 }
 
-export const factory: { [key: string]: ExchangeFactory } = {
+export const exchangeFactory: { [key: string]: ExchangeFactory } = {
     "binance": async ({ ssm, apiCredentialsKeyPrefix }) => {
         let credentials = await getCredentials({ ssm, name: "binance", apiCredentialsKeyPrefix });
         let ex = new BinanceExchange({

@@ -18,7 +18,7 @@ import {
     closePositions,
     createSlOrders,
     createTpOrders,
-    factory,
+    exchangeFactory,
     getTradeState,
     openPositions,
     saveTradeState,
@@ -45,21 +45,21 @@ let investmentFundsAvailable: number = 1000;
 let ssm = new AWS.SSM({ region });
 
 let exchangeCache: { [key: string]: ccxt.pro.Exchange } = {};
-exchangeCache['binance'] = await factory['binance']({ ssm, apiCredentialsKeyPrefix });
-exchangeCache['okx'] = await factory['okx']({ ssm, apiCredentialsKeyPrefix });
-exchangeCache['bybit'] = await factory['bybit']({ ssm, apiCredentialsKeyPrefix });
-exchangeCache['gate'] = await factory['gate']({ ssm, apiCredentialsKeyPrefix });
-exchangeCache['coinex'] = await factory['coinex']({ ssm, apiCredentialsKeyPrefix });
+exchangeCache['binance'] = await exchangeFactory['binance']({ ssm, apiCredentialsKeyPrefix });
+exchangeCache['okx'] = await exchangeFactory['okx']({ ssm, apiCredentialsKeyPrefix });
+exchangeCache['bybit'] = await exchangeFactory['bybit']({ ssm, apiCredentialsKeyPrefix });
+exchangeCache['gate'] = await exchangeFactory['gate']({ ssm, apiCredentialsKeyPrefix });
+exchangeCache['coinex'] = await exchangeFactory['coinex']({ ssm, apiCredentialsKeyPrefix });
 
 let referenceData: TradePairReferenceData = JSON.parse(await fs.promises.readFile(path.resolve(refDataFile), { encoding: 'utf8' }));
 let idealTradeSizes: IdealTradeSizes = JSON.parse(await fs.promises.readFile(path.resolve(idealTradeSizesFile), { encoding: 'utf8' }));
 let settings: Settings = await getSettings({ ssm, settingsPrefix });
 let tradingState: TradeState = await getTradeState({ ssm, tradeStatusKey });
 
-let fundingRatePipeline: FundingRatesChainFunction[] = [];
+let fundingsRatePipeline: FundingRatesChainFunction[] = [];
 let coinGlassLink = await getCoinGlassData({ ssm, coinglassSecretKey });
-fundingRatePipeline.push(coinGlassLink);
-if (apiCredentialsKeyPrefix.match(/\/dev\//)) fundingRatePipeline.push(sandBoxFundingRateLink);
+fundingsRatePipeline.push(coinGlassLink);
+if (apiCredentialsKeyPrefix.match(/\/dev\//)) fundingsRatePipeline.push(sandBoxFundingRateLink);
 
 while (true) {
     let currentHour = (new Date()).getUTCHours();
@@ -95,7 +95,7 @@ while (true) {
         //todo:get investmentFundsAvailable from the balance of the common trading account
         let investmentAmount = investmentFundsAvailable * settings.investmentMargin;
 
-        let fundingRates = await processFundingRatesPipeline(fundingRatePipeline)({ nextFundingHour: nextTradingHour });
+        let fundingRates = await processFundingRatesPipeline(fundingsRatePipeline)({ nextFundingHour: nextTradingHour });
         let tradePairs = await calculateBestRoiTradingPairs({
             fundingRates,
             exchangeCache,

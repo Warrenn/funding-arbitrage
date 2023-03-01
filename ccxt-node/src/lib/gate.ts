@@ -40,7 +40,7 @@ export class GateExchange extends ccxt.pro.gateio {
     }
 
     public setRiskLimit: SetRiskLimitFunction =
-        async (riskLimit: string, symbol: string) => {
+        async (riskLimit: number, symbol: string) => {
 
         }
 

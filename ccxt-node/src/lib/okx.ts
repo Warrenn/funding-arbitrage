@@ -62,7 +62,7 @@ export class OkxExchange extends ccxt.pro.okex {
     }
 
     public setRiskLimit: SetRiskLimitFunction =
-        async (riskLimit: string, symbol: string) => {
+        async (riskLimit: number, symbol: string) => {
 
         }
 }

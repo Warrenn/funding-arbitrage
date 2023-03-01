@@ -1,7 +1,6 @@
 import { FetchOpenStopOrdersFunction, SetRiskLimitFunction } from "./types.js";
 import ccxt from 'ccxt';
 
-Í
 export class BybitExchange extends ccxt.pro.bybit {
 
     public fetchOpenStopOrders: FetchOpenStopOrdersFunction =
@@ -10,7 +9,12 @@ export class BybitExchange extends ccxt.pro.bybit {
         }
 
     public setRiskLimit: SetRiskLimitFunction =
-        async (riskLimit: string, symbol: string) => {
-
+        async (riskLimit: number, symbol: string) => {
+            const response = await this.privatPostUnifiedV3PrivatePositionSetRiskLimit({
+                category: "linear",
+                symbol,
+                riskId: riskLimit
+            });
+            return response;
         }
 }

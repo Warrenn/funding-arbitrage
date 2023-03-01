@@ -17,7 +17,7 @@ export class CoinexExchange extends ccxt.pro.coinex {
         }
 
     public setRiskLimit: SetRiskLimitFunction =
-        async (riskLimit: string, symbol: string) => {
+        async (riskLimit: number, symbol: string) => {
 
         }
 }

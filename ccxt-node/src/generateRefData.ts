@@ -1,4 +1,4 @@
-import { factory, getCoinGlassData } from "./lib/global.js";
+import { exchangeFactory, getCoinGlassData } from "./lib/global.js";
 import { LeverageTier, SymbolType, TradePairReferenceData } from "./lib/types.js";
 import { setTimeout as asyncSleep } from 'timers/promises';
 import fs from 'fs';
@@ -17,11 +17,11 @@ const
 let ssm = new AWS.SSM({ region });
 
 let exchangeCache: { [key: string]: ccxt.pro.Exchange } = {};
-exchangeCache['binance'] = await factory['binance']({ ssm, apiCredentialsKeyPrefix });
-exchangeCache['okx'] = await factory['okx']({ ssm, apiCredentialsKeyPrefix });
-exchangeCache['bybit'] = await factory['bybit']({ ssm, apiCredentialsKeyPrefix });
-exchangeCache['gate'] = await factory['gate']({ ssm, apiCredentialsKeyPrefix });
-exchangeCache['coinex'] = await factory['coinex']({ ssm, apiCredentialsKeyPrefix });
+exchangeCache['binance'] = await exchangeFactory['binance']({ ssm, apiCredentialsKeyPrefix });
+exchangeCache['okx'] = await exchangeFactory['okx']({ ssm, apiCredentialsKeyPrefix });
+exchangeCache['bybit'] = await exchangeFactory['bybit']({ ssm, apiCredentialsKeyPrefix });
+exchangeCache['gate'] = await exchangeFactory['gate']({ ssm, apiCredentialsKeyPrefix });
+exchangeCache['coinex'] = await exchangeFactory['coinex']({ ssm, apiCredentialsKeyPrefix });
 
 let refData: TradePairReferenceData = {};
 

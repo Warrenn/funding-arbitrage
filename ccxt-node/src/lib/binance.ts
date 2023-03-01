@@ -34,7 +34,7 @@ export class BinanceExchange extends ccxt.pro.binance {
         }
 
     public setRiskLimit: SetRiskLimitFunction =
-        async (riskLimit: string, symbol: string) => {
+        async (riskLimit: number, symbol: string) => {
 
-        }Í
+        }
 }
