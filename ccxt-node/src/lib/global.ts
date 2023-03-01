@@ -365,37 +365,6 @@ export async function calculateBestRoiTradingPairs({
     return sortedPairs;
 };
 
-export async function openBuyOrdersSize(params: {
-    exchange: ccxt.ExchangePro,
-    symbol: string,
-}): Promise<number> {
-    return openOrdersSize({ ...params, side: 'buy' });
-}
-
-export async function openSellOrdersSize(params: {
-    exchange: ccxt.ExchangePro,
-    symbol: string,
-}): Promise<number> {
-    return openOrdersSize({ ...params, side: 'sell' });
-}
-
-export async function openOrdersSize({
-    exchange,
-    symbol,
-    side
-}: {
-    exchange: ccxt.ExchangePro,
-    symbol: string,
-    side: Order['side']
-}): Promise<number> {
-    let orders = await exchange.fetchOpenOrders(symbol);
-    if (!orders?.length) return 0;
-
-    let contractSize = exchange.market(symbol).contractSize || 1;
-    let totalContracts = orders.filter((o: any) => o.side == side && !o.triggerPrice).reduce((a, o) => a + ((o.remaining != undefined) ? o.remaining : o.amount), 0);
-    return (totalContracts * contractSize);
-}
-
 export async function sizeOfCloseOrdersPlaced({
     exchange,
     position,

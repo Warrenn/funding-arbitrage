@@ -6,12 +6,9 @@ import AWS from 'aws-sdk';
 import dotenv from 'dotenv';
 
 import {
-    BybitExchange,
     FundingRatesChainFunction,
     IdealTradeSizes,
-    LeverageTier,
     Settings,
-    SymbolType,
     TradePairReferenceData,
     TradeState
 } from './lib/types.js';
@@ -21,11 +18,8 @@ import {
     createSlOrders,
     createTpOrders,
     factory,
-    getPositionSize,
     getTradeState,
-    openBuyOrdersSize,
     openPositions,
-    openSellOrdersSize,
     saveTradeState,
     calculateBestRoiTradingPairs,
     processFundingRatesPipeline,
