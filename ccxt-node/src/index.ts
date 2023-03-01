@@ -66,10 +66,6 @@ let coinGlassLink = await getCoinGlassData({ ssm, coinglassSecretKey });
 fundingRatePipeline.push(coinGlassLink);
 if (apiCredentialsKeyPrefix.match(/\/dev\//)) fundingRatePipeline.push(sandBoxFundingRateLink);
 
-//multiple trading selected pairs
-//multiple concurrent position opening/closing orders
-//recovery by waiting for opening closing orders to conclude
-
 while (true) {
     let currentHour = (new Date()).getUTCHours();
 
