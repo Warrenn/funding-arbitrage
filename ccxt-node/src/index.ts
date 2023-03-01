@@ -1,13 +1,14 @@
 import { setTimeout as asyncSleep } from 'timers/promises';
 import fs from 'fs';
 import path from 'path';
-import ccxt, { ExchangePro, Order } from 'ccxt';
+import ccxt from 'ccxt';
 import AWS from 'aws-sdk';
 import dotenv from 'dotenv';
 
 import {
     FundingRatesChainFunction,
     IdealTradeSizes,
+    SetRiskLimitFunction,
     Settings,
     TradePairReferenceData,
     TradeState
@@ -91,7 +92,7 @@ while (true) {
 
     if (tradingState.state == 'closed' && currentHour >= nextOnboardingHour) {
 
-        //todo:get investmentFundsAvailable from the balance at the common trading account
+        //todo:get investmentFundsAvailable from the balance of the common trading account
         let investmentAmount = investmentFundsAvailable * settings.investmentMargin;
 
         let fundingRates = await processFundingRatesPipeline(fundingRatePipeline)({ nextFundingHour: nextTradingHour });
@@ -155,8 +156,11 @@ while (true) {
         let requiredLiquidity = (tradingState.orderSize * rate) / settings.initialMargin;
         //place deposit information
 
-        //todo:set risk limit
-        //todo:set leverage
+        await (<SetRiskLimitFunction>longExchange.setRiskLimit)(tradingState.longRiskIndex, tradingState.longSymbol);
+        await longExchange.setLeverage(tradingState.longMaxLeverage, tradingState.longSymbol);
+
+        await (<SetRiskLimitFunction>shortExchange.setRiskLimit)(tradingState.shortRiskIndex, tradingState.shortSymbol);
+        await shortExchange.setLeverage(tradingState.shortMaxLeverage, tradingState.shortSymbol);
 
         await openPositions({
             longExchange,

@@ -1,4 +1,3 @@
-import { setTimeout as asyncSleep } from 'timers/promises';
 import ccxt, { ExchangePro, Order } from 'ccxt';
 import AWS from 'aws-sdk';
 
@@ -12,16 +11,16 @@ import {
     MakerSide,
     RoiTradePair,
     TradeState,
-    BinanceExchange,
-    BybitExchange,
-    CoinexExchange,
-    GateExchange,
-    OkxExchange,
     FundingRatesChainFunction,
     TradePairReferenceData,
     FetchOpenStopOrdersFunction,
     IdealTradeSizes
 } from './types.js';
+import { BinanceExchange } from './binance.js';
+import { OkxExchange } from './okx.js';
+import { BybitExchange } from './bybit.js';
+import { GateExchange } from './gate.js';
+import { CoinexExchange } from './coinex.js';
 
 export async function getCredentials({ ssm, name, apiCredentialsKeyPrefix }: { ssm: AWS.SSM, name: string, apiCredentialsKeyPrefix: string }): Promise<any> {
     let ssmParam = await ssm.getParameter({ Name: `${apiCredentialsKeyPrefix}${name}`, WithDecryption: true }).promise();
@@ -319,7 +318,7 @@ export async function calculateBestRoiTradingPairs({
                 let calculation = calculateMaxLeverage({ investment: investmentInLeg, leverageTiers, contractSize, currentPrice });
                 let maxLeverage = calculation.tier.maxLeverage;
                 let calculatedLeverage = calculation.calculatedLeverage;
-                let riskIndex = `${calculation.tier.tier}`;
+                let riskIndex = calculation.tier.tier;
 
                 let coinCalculation: FundingRateCalculation = {
                     exchange: exchangeName,
