@@ -34,7 +34,7 @@ export async function getCoinglassSecret({ ssm, coinglassSecretKey }: { ssm: AWS
 
 export async function saveTradeState({ ssm, state, tradeStatusKey }: { ssm: AWS.SSM, state: TradeState, tradeStatusKey: string }): Promise<any> {
     let jsonValue = JSON.stringify(state, undefined, 3);
-    return ssm.putParameter({ Name: tradeStatusKey, Value: jsonValue }).promise();
+    return ssm.putParameter({ Name: tradeStatusKey, Value: jsonValue, Overwrite: true }).promise();
 }
 
 export async function getTradeState({ ssm, tradeStatusKey }: { ssm: AWS.SSM, tradeStatusKey: string }): Promise<any> {
@@ -54,7 +54,10 @@ export const exchangeFactory: { [key: string]: ExchangeFactory } = {
             secret: credentials.secret,
             apiKey: credentials.key,
             enableRateLimit: true,
-            options: { fetchOrderBookLimit: 5 }
+            options: {
+                fetchOrderBookLimit: 5,
+                defaultMarginMode: 'isolated'
+            }
         });
         if (apiCredentialsKeyPrefix.match(/\/dev\//)) ex.setSandboxMode(true);
         await ex.loadMarkets();
@@ -71,7 +74,9 @@ export const exchangeFactory: { [key: string]: ExchangeFactory } = {
             options: {
                 'fetchTimeOffsetBeforeAuth': true,
                 'recvWindow': 59999,
-                fetchOrderBookLimit: 5
+                fetchOrderBookLimit: 5,
+                defaultMarginMode: 'isolated'
+
             },
             timeout: 99999
         });
@@ -86,7 +91,9 @@ export const exchangeFactory: { [key: string]: ExchangeFactory } = {
             options: {
                 'fetchTimeOffsetBeforeAuth': true,
                 'recvWindow': 59999,
-                fetchOrderBookLimit: 5
+                fetchOrderBookLimit: 5,
+                defaultMarginMode: 'isolated'
+
             },
             apiKey: credentials.key,
             enableRateLimit: true
@@ -101,7 +108,10 @@ export const exchangeFactory: { [key: string]: ExchangeFactory } = {
             secret: credentials.secret,
             apiKey: credentials.key,
             enableRateLimit: true,
-            options: { fetchOrderBookLimit: 5 }
+            options: {
+                fetchOrderBookLimit: 5,
+                defaultMarginMode: 'isolated'
+            }
         });
         if (apiCredentialsKeyPrefix.match(/\/dev\//)) ex.setSandboxMode(true);
         await ex.loadMarkets();
@@ -113,7 +123,10 @@ export const exchangeFactory: { [key: string]: ExchangeFactory } = {
             secret: credentials.secret,
             apiKey: credentials.key,
             enableRateLimit: true,
-            options: { fetchOrderBookLimit: 5 }
+            options: {
+                fetchOrderBookLimit: 5,
+                defaultMarginMode: 'isolated'
+            }
         });
         await ex.loadMarkets();
         return ex;
@@ -306,6 +319,7 @@ export async function calculateBestRoiTradingPairs({
             for (let pairIndex = 0; pairIndex < pairs.length; pairIndex++) {
                 let symbol = pairs[pairIndex];
                 if (!(symbol in referenceData[coin][exchangeName])) continue;
+                if (!(symbol in exchange.markets)) continue;
 
                 let reference = referenceData[coin][exchangeName][symbol];
                 let rate: number = fundingRates[coin][exchangeName][symbol] / 100;
@@ -313,7 +327,7 @@ export async function calculateBestRoiTradingPairs({
                 let contractSize = reference.riskLevels?.contractSize;
                 let currentPrice = undefined;
                 if (reference.riskLevels?.type == 'base') {
-                    currentPrice = (await exchange.fetchOHLCV(symbol, '1s', undefined, 1))[0][4];
+                    currentPrice = (await exchange.fetchOHLCV(symbol, undefined, undefined, 1))[0][4];
                 }
                 let calculation = calculateMaxLeverage({ investment: investmentInLeg, leverageTiers, contractSize, currentPrice });
                 let maxLeverage = calculation.tier.maxLeverage;
@@ -468,7 +482,7 @@ export async function createLimitOrder({
             order = await exchange.createLimitOrder(symbol, side, size, price, params);
             if (!order) continue;
             if (!order.id && (stopLossPrice || takeProfitPrice)) {
-                let position = await exchange.fetchPosition(symbol);
+                let position = await exchange.fetchPosition(symbol) || { info: { stop_loss_price: 0, take_profit_price: 0 } };
                 if (stopLossPrice && position.info.stop_loss_price > 0) return order;
                 if (position.info.take_profit_price > 0) return order;
                 continue;
@@ -546,8 +560,8 @@ export async function createSlOrders({
     let { contractSize: longContractSize, idealSize: longIdealSize, maxSize: longMaxSize } = getLimits({ exchange: longExchange, symbol: longSymbol, idealTradeSizes });
     let { contractSize: shortContractSize, idealSize: shortIdealSize, maxSize: shortMaxSize } = getLimits({ exchange: longExchange, symbol: longSymbol, idealTradeSizes });
 
-    let longPosition = await longExchange.fetchPosition(longSymbol);
-    let shortPosition = await shortExchange.fetchPosition(shortSymbol);
+    let longPosition = await longExchange.fetchPosition(longSymbol) || {};
+    let shortPosition = await shortExchange.fetchPosition(shortSymbol) || {};
 
     let longPositionSize = (longPosition.contracts || 0) * longContractSize;
     let shortPositionSize = (shortPosition.contracts || 0) * shortContractSize;
@@ -594,8 +608,8 @@ export async function createTpOrders({
     let { contractSize: longContractSize, idealSize: longIdealSize, maxSize: longMaxSize } = getLimits({ exchange: longExchange, symbol: longSymbol, idealTradeSizes });
     let { contractSize: shortContractSize, idealSize: shortIdealSize, maxSize: shortMaxSize } = getLimits({ exchange: longExchange, symbol: longSymbol, idealTradeSizes });
 
-    let longPosition = await longExchange.fetchPosition(longSymbol);
-    let shortPosition = await shortExchange.fetchPosition(shortSymbol);
+    let longPosition = await longExchange.fetchPosition(longSymbol) || {};
+    let shortPosition = await shortExchange.fetchPosition(shortSymbol) || {};
 
     let longPositionSize = (longPosition.contracts || 0) * longContractSize;
     let shortPositionSize = (shortPosition.contracts || 0) * shortContractSize;
@@ -629,7 +643,7 @@ export async function createTpOrders({
 export async function getPositionSize({ exchange, symbol }: { exchange: ccxt.ExchangePro, symbol: string }): Promise<number> {
     let market = exchange.market(symbol);
     let position = await exchange.fetchPosition(symbol);
-    return (position.contracts || 0) * (market.contractSize || 1);
+    return (position?.contracts || 0) * (market.contractSize || 1);
 }
 
 export async function closePositions(params: AdjustPositionDetails) {
@@ -674,12 +688,15 @@ function getLimits({
     let market = exchange.market(symbol);
     let contractSize = market.contractSize || 1;
     let maxSize = market.limits.amount?.max || contractSize;
+    let minSize = market.limits.amount?.min || contractSize;
+
     let {
         batchSize,
         idealSize
     } = (symbol in idealTradeSizes) ? idealTradeSizes[symbol] : { batchSize: 1, idealSize: maxSize };
 
     if (idealSize < contractSize) idealSize = contractSize;
+    if (idealSize < minSize) idealSize = minSize;
 
     return {
         batchSize,
@@ -704,8 +721,9 @@ export async function adjustUntilTargetMet({
     contractSize: number,
     maxSize: number,
 }) {
+    target = Math.abs(target);
     while (true) {
-        let newSize = await getSize();
+        let newSize = Math.abs(await getSize());
         if (newSize == target) return;
 
         let size = Math.abs(target - newSize);
@@ -753,6 +771,7 @@ export async function adjustPositions({
                 takerExchange: longExchange,
                 takerSymbol: longSymbol
             };
+    if (!(makerSymbol in makerExchange.markets) || !(takerSymbol in takerExchange.markets)) return;
 
     let {
         batchSize: makerBatchSize,
@@ -776,8 +795,8 @@ export async function adjustPositions({
     });
 
     while (true) {
-        let makerPositionSize = await getPositionSize({ exchange: makerExchange, symbol: makerSymbol });
-        let takerPositionSize = await getPositionSize({ exchange: takerExchange, symbol: takerSymbol });
+        let makerPositionSize = Math.abs(await getPositionSize({ exchange: makerExchange, symbol: makerSymbol }));
+        let takerPositionSize = Math.abs(await getPositionSize({ exchange: takerExchange, symbol: takerSymbol }));
 
         if (makerPositionSize == orderSize && takerPositionSize == orderSize) return;
         await adjustUntilTargetMet({
@@ -791,7 +810,7 @@ export async function adjustPositions({
         if (makerPositionSize == orderSize) continue;
 
         let totalInOrders = 0;
-        let currentPrice = (await makerExchange.fetchOHLCV(makerSymbol, '1s', undefined, 1))[0][4];
+        let currentPrice = (await makerExchange.fetchOHLCV(makerSymbol, undefined, undefined, 1))[0][4];
         let minTrailPrice = currentPrice * (1 - trailPct);
         let maxTrailPrice = currentPrice * (1 + trailPct);
 

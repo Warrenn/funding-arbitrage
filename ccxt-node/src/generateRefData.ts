@@ -67,6 +67,19 @@ riskLevels["coinex"] = await loadTiers("coinex");
 riskLevels["gate"] = await loadTiers("gate");
 riskLevels["okx"] = await loadTiers("okx");
 
+let gateRiskLevels = riskLevels["gate"];
+let gateKeys = Object.keys(gateRiskLevels);
+for (let i = 0; i < gateKeys.length; i++) {
+    let coin = gateKeys[i];
+    let gTiers = gateRiskLevels[coin];
+    for (let ii = 0; ii < gTiers.length; ii++) {
+        let gTier = gTiers[ii];
+        gTier.tier = gTier.maxNotional;
+    }
+}
+let content = JSON.stringify(gateRiskLevels, undefined, 3);
+await fs.promises.writeFile('./gate.leverageTiers.json', content, { encoding: 'utf8' });
+
 for (let coinIndex = 0; coinIndex < coins.length; coinIndex++) {
     let coin = coins[coinIndex];
     refData[coin] = {};
@@ -107,3 +120,11 @@ for (let coinIndex = 0; coinIndex < coins.length; coinIndex++) {
 
 let refString = JSON.stringify(refData, undefined, 3);
 await fs.promises.writeFile('./refData.json', refString, { encoding: 'utf8' });
+//long placement maker and short taker
+//short placement maker and long taker
+//set leverage
+//exchange that requires setting risk limit
+//exchange that has the base as the max notion
+//interuption placing an open and recovering 
+//interuption placing a close and recovering
+//interuption placing tp/sl and recovering

@@ -68,6 +68,11 @@ while (true) {
     let nextTradingHour = (lastTradingHour + settings.fundingHourlyFreq) % 24;
     let nextOnboardingHour = (24 + (nextTradingHour - settings.onBoardingHours)) % 24;
 
+    //todo:remove dev work here
+    currentHour = nextTradingHour;
+    tradingState.fundingHour = nextTradingHour;
+    tradingState.longMaxLeverage = 25;
+
     if (tradingState.fundingHour != nextTradingHour && tradingState.state != 'closed') {
         let longExchange = exchangeCache[tradingState.longExchange];
         let shortExchange = exchangeCache[tradingState.shortExchange];
@@ -80,6 +85,9 @@ while (true) {
             makerSide: tradingState.makerSide,
             idealTradeSizes
         });
+
+        await longExchange.cancelAllOrders(tradingState.longSymbol);
+        await shortExchange.cancelAllOrders(tradingState.shortSymbol);
 
         await longExchange.cancelAllOrders(tradingState.longSymbol, { stop: true });
         await shortExchange.cancelAllOrders(tradingState.shortSymbol, { stop: true });
@@ -110,8 +118,8 @@ while (true) {
         let longExchange = exchangeCache[bestPair.longExchange];
         let shortExchange = exchangeCache[bestPair.shortExchange];
 
-        let longRate = (await longExchange.fetchOHLCV(bestPair.longSymbol, '1s', undefined, 1))[0][4];
-        let shortRate = (await shortExchange.fetchOHLCV(bestPair.shortSymbol, '1s', undefined, 1))[0][4];
+        let longRate = (await longExchange.fetchOHLCV(bestPair.longSymbol, undefined, undefined, 1))[0][4];
+        let shortRate = (await shortExchange.fetchOHLCV(bestPair.shortSymbol, undefined, undefined, 1))[0][4];
 
         let longMarket = longExchange.market(bestPair.longSymbol);
         let shortMarket = shortExchange.market(bestPair.shortSymbol);
@@ -152,7 +160,7 @@ while (true) {
         let exchange = longExchange;
         let symbol = tradingState.longSymbol;
 
-        let rate = (await exchange.fetchOHLCV(symbol, '1s', undefined, 1))[0][4];
+        let rate = (await exchange.fetchOHLCV(symbol, undefined, undefined, 1))[0][4];
         let requiredLiquidity = (tradingState.orderSize * rate) / settings.initialMargin;
         //place deposit information
 

@@ -1,36 +1,35 @@
-import ccxt, { ExchangePro, Order } from 'ccxt';
+import ccxt, { ExchangePro, Order } from 'ccxt' 
 
-export type MakerSide = 'long' | 'short';
+export type MakerSide = 'long' | 'short' 
 
-export type SymbolType = 'quote' | 'base';
+export type SymbolType = 'quote' | 'base' 
 
-export type SetRiskLimitFunction = (riskIndex: number, symbol: string) => Promise<any>;
+export type SetRiskLimitFunction = (riskIndex: number, symbol: string) => Promise<any> 
 
-export type GetPriceFunction = ({ side, bid, ask }: { side: Order["side"], bid: number, ask: number }) => number;
+export type GetPriceFunction = ({ side, bid, ask }: { side: Order["side"], bid: number, ask: number }) => number 
 
-export type ExchangeFactory = ({ ssm, apiCredentialsKeyPrefix }: { ssm: AWS.SSM, apiCredentialsKeyPrefix: string }) => Promise<ccxt.ExchangePro>;
+export type ExchangeFactory = ({ ssm, apiCredentialsKeyPrefix }: { ssm: AWS.SSM, apiCredentialsKeyPrefix: string }) => Promise<ccxt.ExchangePro> 
 
-export type FetchOpenStopOrdersFunction = (symbol: string, since?: number, limit?: number, params?: ccxt.Params) => Promise<ccxt.Order[]>
+export type FetchOpenStopOrdersFunction = (symbol: string, since?: number, limit?: number, params?: ccxt.Params) => Promise<ccxt.Order[]> 
 
-export type FundingRatesChainFunction = (fundingRates: FundingRates, nextFundingHour: number) => Promise<FundingRates>;
+export type FundingRatesChainFunction = (fundingRates: FundingRates, nextFundingHour: number) => Promise<FundingRates> 
 
 export type IdealTradeSizes = {
     [symbol: string]: {
         idealSize: number,
         batchSize: number
     }
-}
+} 
 
 export type Settings = {
-    trailPct: number;
+    trailPct: number,
     investmentMargin: number,
     initialMargin: number,
     tpSlLimit: number,
     tpSlTrigger: number,
     onBoardingHours: number,
-    fundingHourlyFreq: number,
-    idealOrderSize: number
-}
+    fundingHourlyFreq: number
+} 
 
 export type TradePairReferenceData = {
     [coin: string]: {
@@ -46,7 +45,7 @@ export type TradePairReferenceData = {
             }
         }
     }
-}
+} 
 
 export type CreateOrderDetails = {
     exchange: ExchangePro,
@@ -61,7 +60,7 @@ export type CreateOrderDetails = {
     positionId?: string,
     retryLimit?: number,
     immediate?: boolean
-}
+} 
 
 export type AdjustPositionDetails = {
     longExchange: ccxt.pro.Exchange,

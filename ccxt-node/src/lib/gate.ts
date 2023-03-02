@@ -41,7 +41,11 @@ export class GateExchange extends ccxt.pro.gateio {
 
     public setRiskLimit: SetRiskLimitFunction =
         async (riskLimit: number, symbol: string) => {
-
+            let market = this.market(symbol);
+            const [request, query] = this.prepareRequest(market, undefined, {});
+            request["risk_limit"] = riskLimit.toString();
+            const response = await this['privateFuturesPostSettlePositionsContractRiskLimit'](this.extend(request, query));
+            return response;
         }
 
     public fetchOpenStopOrders: FetchOpenStopOrdersFunction =
