@@ -2,6 +2,7 @@ import { FetchOpenStopOrdersFunction, SetRiskLimitFunction } from "./types.js";
 import ccxt from 'ccxt';
 
 export class BybitExchange extends ccxt.pro.bybit {
+    //todo:refactor to include the message as well
     private ignoreErrorCodes: string[] = ['10001', '110043'];
 
     handleErrors(httpCode: any, reason: any, url: any, method: any, headers: any, body: any, response: any, requestHeaders: any, requestBody: any) {

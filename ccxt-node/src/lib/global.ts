@@ -563,8 +563,8 @@ export async function createSlOrders({
     let longPosition = await longExchange.fetchPosition(longSymbol) || {};
     let shortPosition = await shortExchange.fetchPosition(shortSymbol) || {};
 
-    let longPositionSize = (longPosition.contracts || 0) * longContractSize;
-    let shortPositionSize = (shortPosition.contracts || 0) * shortContractSize;
+    let longPositionSize = Math.abs((longPosition.contracts || 0) * longContractSize);
+    let shortPositionSize = Math.abs((shortPosition.contracts || 0) * shortContractSize);
 
     let liquidationPrice = await calculateLiquidationPrice({ exchange: longExchange, position: longPosition, market: longExchange.market(longSymbol) });
     let price = liquidationPrice * (1 + limit);
@@ -611,8 +611,8 @@ export async function createTpOrders({
     let longPosition = await longExchange.fetchPosition(longSymbol) || {};
     let shortPosition = await shortExchange.fetchPosition(shortSymbol) || {};
 
-    let longPositionSize = (longPosition.contracts || 0) * longContractSize;
-    let shortPositionSize = (shortPosition.contracts || 0) * shortContractSize;
+    let longPositionSize = Math.abs((longPosition.contracts || 0) * longContractSize);
+    let shortPositionSize = Math.abs((shortPosition.contracts || 0) * shortContractSize);
 
     let liquidationPriceShort = await calculateLiquidationPrice({ exchange: shortExchange, position: shortPosition, market: shortExchange.market(shortSymbol) });
     let entryDiff = longPosition.entryPrice - shortPosition.entryPrice;
