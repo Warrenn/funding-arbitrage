@@ -6,7 +6,9 @@ const ignoreErrorCodes: {
     }
 } = {
     '10001': { 'risk limit not modified': {} },
-    '110043': { 'leverage not modified': {} }
+    '10016': { 'Cancel All No Result': {} },
+    '110043': { 'leverage not modified': {} },
+    '110017': { 'current position is zero, cannot fix reduce-only order qty': {} },
 };
 export class BybitExchange extends ccxt.pro.bybit {
 

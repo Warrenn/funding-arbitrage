@@ -416,8 +416,8 @@ export async function calculateLiquidationPrice({ exchange, market, position }) 
     return liqPrice;
 }
 export async function createSlOrders({ longExchange, longSymbol, shortExchange, shortSymbol, limit, trigger, idealTradeSizes }) {
-    let { contractSize: longContractSize, idealSize: longIdealSize, maxSize: longMaxSize, minSize: longMinSize } = getLimits({ exchange: longExchange, symbol: longSymbol, idealTradeSizes });
-    let { contractSize: shortContractSize, idealSize: shortIdealSize, maxSize: shortMaxSize, minSize: shortMinSize } = getLimits({ exchange: longExchange, symbol: longSymbol, idealTradeSizes });
+    let { contractSize: longContractSize, maxSize: longMaxSize, minSize: longMinSize } = getLimits({ exchange: longExchange, symbol: longSymbol, idealTradeSizes });
+    let { contractSize: shortContractSize, maxSize: shortMaxSize, minSize: shortMinSize } = getLimits({ exchange: longExchange, symbol: longSymbol, idealTradeSizes });
     let longPosition = await longExchange.fetchPosition(longSymbol) || {};
     let shortPosition = await shortExchange.fetchPosition(shortSymbol) || {};
     let longPositionSize = Math.abs((longPosition.contracts || 0) * longContractSize);
@@ -426,7 +426,7 @@ export async function createSlOrders({ longExchange, longSymbol, shortExchange, 
     let price = liquidationPrice * (1 + limit);
     let stopLossPrice = liquidationPrice * (1 + limit + trigger);
     await adjustUntilTargetMet({
-        target: longPositionSize, contractSize: longContractSize, idealSize: longIdealSize, maxSize: longMaxSize, minSize: longMinSize,
+        target: longPositionSize, contractSize: longContractSize, idealSize: longMaxSize, maxSize: longMaxSize, minSize: longMinSize,
         getPositionSize: () => sizeOfStopLossOrders({ exchange: longExchange, position: longPosition, symbol: longSymbol }),
         createOrder: (size) => createLimitOrder({ exchange: longExchange, side: "sell", size, symbol: longSymbol, price, stopLossPrice, positionId: longPosition.id })
     });
@@ -434,14 +434,14 @@ export async function createSlOrders({ longExchange, longSymbol, shortExchange, 
     price = liquidationPrice * (1 - limit);
     stopLossPrice = liquidationPrice * (1 - limit - trigger);
     await adjustUntilTargetMet({
-        target: shortPositionSize, contractSize: shortContractSize, idealSize: shortIdealSize, maxSize: shortMaxSize, minSize: shortMinSize,
+        target: shortPositionSize, contractSize: shortContractSize, idealSize: shortMaxSize, maxSize: shortMaxSize, minSize: shortMinSize,
         getPositionSize: () => sizeOfStopLossOrders({ exchange: shortExchange, position: shortPosition, symbol: shortSymbol }),
-        createOrder: (size) => createLimitOrder({ exchange: shortExchange, side: "sell", size, symbol: shortSymbol, price, stopLossPrice, positionId: shortPosition.id })
+        createOrder: (size) => createLimitOrder({ exchange: shortExchange, side: "buy", size, symbol: shortSymbol, price, stopLossPrice, positionId: shortPosition.id })
     });
 }
 export async function createTpOrders({ longExchange, longSymbol, shortExchange, shortSymbol, limit, trigger, idealTradeSizes }) {
-    let { contractSize: longContractSize, idealSize: longIdealSize, maxSize: longMaxSize, minSize: longMinSize } = getLimits({ exchange: longExchange, symbol: longSymbol, idealTradeSizes });
-    let { contractSize: shortContractSize, idealSize: shortIdealSize, maxSize: shortMaxSize, minSize: shortMinSize } = getLimits({ exchange: longExchange, symbol: longSymbol, idealTradeSizes });
+    let { contractSize: longContractSize, maxSize: longMaxSize, minSize: longMinSize } = getLimits({ exchange: longExchange, symbol: longSymbol, idealTradeSizes });
+    let { contractSize: shortContractSize, maxSize: shortMaxSize, minSize: shortMinSize } = getLimits({ exchange: longExchange, symbol: longSymbol, idealTradeSizes });
     let longPosition = await longExchange.fetchPosition(longSymbol) || {};
     let shortPosition = await shortExchange.fetchPosition(shortSymbol) || {};
     let longPositionSize = Math.abs((longPosition.contracts || 0) * longContractSize);
@@ -452,7 +452,7 @@ export async function createTpOrders({ longExchange, longSymbol, shortExchange, 
     let price = maxLong * (1 - limit);
     let takeProfitPrice = maxLong * (1 - limit - trigger);
     await adjustUntilTargetMet({
-        target: longPositionSize, contractSize: longContractSize, idealSize: longIdealSize, maxSize: longMaxSize, minSize: longMinSize,
+        target: longPositionSize, contractSize: longContractSize, idealSize: longMaxSize, maxSize: longMaxSize, minSize: longMinSize,
         getPositionSize: () => sizeOfTakeProfitOrders({ exchange: longExchange, position: longPosition, symbol: longSymbol }),
         createOrder: (size) => createLimitOrder({ exchange: longExchange, side: "sell", size, symbol: longSymbol, price, takeProfitPrice, positionId: longPosition.id })
     });
@@ -461,9 +461,9 @@ export async function createTpOrders({ longExchange, longSymbol, shortExchange, 
     price = minShort * (1 + limit);
     takeProfitPrice = minShort * (1 + limit + trigger);
     await adjustUntilTargetMet({
-        target: shortPositionSize, contractSize: shortContractSize, idealSize: shortIdealSize, maxSize: shortMaxSize, minSize: shortMinSize,
+        target: shortPositionSize, contractSize: shortContractSize, idealSize: shortMaxSize, maxSize: shortMaxSize, minSize: shortMinSize,
         getPositionSize: () => sizeOfTakeProfitOrders({ exchange: shortExchange, position: shortPosition, symbol: shortSymbol }),
-        createOrder: (size) => createLimitOrder({ exchange: shortExchange, side: "sell", size, symbol: shortSymbol, price, takeProfitPrice, positionId: shortPosition.id })
+        createOrder: (size) => createLimitOrder({ exchange: shortExchange, side: "buy", size, symbol: shortSymbol, price, takeProfitPrice, positionId: shortPosition.id })
     });
 }
 export async function getPositionSize({ exchange, symbol }) {
@@ -564,27 +564,23 @@ export async function adjustPositions({ longExchange, longSymbol, shortExchange,
             createOrder: (size) => createImmediateOrder({ exchange: takerExchange, side: takerOrderSide, size, symbol: takerSymbol, reduceOnly })
         });
         if ((Math.abs(makerPositionSize - orderSize) < makerMinSize) || (orderSize && makerPositionSize > orderSize))
-            return;
-        let totalInOrders = 0;
+            break;
         let currentPrice = (_a = (await makerExchange.fetchOHLCV(makerSymbol, undefined, undefined, 1))[0]) === null || _a === void 0 ? void 0 : _a[4];
         let minTrailPrice = currentPrice * (1 - trailPct);
         let maxTrailPrice = currentPrice * (1 + trailPct);
         let orders = await makerExchange.fetchOpenOrders(makerSymbol);
         orders = orders.filter((o) => o.side == makerOrderSide && !o.triggerPrice);
-        let ordersInProgress = orders.length;
         for (let i = 0; i < orders.length && currentPrice; i++) {
             let order = orders[i];
-            if (order.price > minTrailPrice && order.price < maxTrailPrice) {
-                totalInOrders += Math.abs((order.remaining != undefined) ? order.remaining : order.amount);
-            }
-            else {
-                await makerExchange.cancelOrder(order.id, makerSymbol);
-                ordersInProgress--;
-            }
+            if (order.price > minTrailPrice && order.price < maxTrailPrice)
+                continue;
+            await makerExchange.cancelOrder(order.id, makerSymbol);
         }
-        totalInOrders = totalInOrders * makerContractSize;
+        orders = (await makerExchange.fetchOpenOrders(makerSymbol)).filter((o) => o.side == makerOrderSide && !o.triggerPrice);
+        let ordersInProgress = orders.length;
         if (ordersInProgress == makerBatchSize)
             continue;
+        let totalInOrders = orders.reduce((p, order) => p + Math.abs((order.remaining != undefined) ? order.remaining : order.amount), 0) * makerContractSize;
         makerPositionSize = Math.abs(await getPositionSize({ exchange: makerExchange, symbol: makerSymbol }));
         let size = (orderSize == 0) ?
             (makerPositionSize - totalInOrders) :
@@ -598,6 +594,12 @@ export async function adjustPositions({ longExchange, longSymbol, shortExchange,
             orderSize: size
         });
         await createLimitOrder({ exchange: makerExchange, side: makerOrderSide, size, symbol: makerSymbol, reduceOnly });
+    }
+    let orders = await makerExchange.fetchOpenOrders(makerSymbol);
+    orders = orders.filter((o) => o.side == makerOrderSide && !o.triggerPrice);
+    for (let i = 0; i < orders.length; i++) {
+        let order = orders[i];
+        await makerExchange.cancelOrder(order.id, makerSymbol);
     }
 }
 //# sourceMappingURL=global.js.map
