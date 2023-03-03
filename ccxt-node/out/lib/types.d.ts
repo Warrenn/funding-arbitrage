@@ -69,6 +69,7 @@ export declare type AdjustPositionDetails = {
     trailPct?: number;
     orderSize?: number;
     reduceOnly?: boolean;
+    tolerance?: number;
 };
 export declare type TradeState = {
     fundingHour: number;

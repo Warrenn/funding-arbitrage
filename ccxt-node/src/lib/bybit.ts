@@ -1,14 +1,21 @@
 import { FetchOpenStopOrdersFunction, SetRiskLimitFunction } from "./types.js";
 import ccxt from 'ccxt';
-
+const ignoreErrorCodes: {
+    [errorCode: string]: {
+        [message: string]: any
+    }
+} = {
+    '10001': { 'risk limit not modified': {} },
+    '110043': { 'leverage not modified': {} }
+};
 export class BybitExchange extends ccxt.pro.bybit {
-    //todo:refactor to include the message as well
-    private ignoreErrorCodes: string[] = ['10001', '110043'];
 
     handleErrors(httpCode: any, reason: any, url: any, method: any, headers: any, body: any, response: any, requestHeaders: any, requestBody: any) {
         if (!response) return;
         const errorCode = this.safeString2(response, 'ret_code', 'retCode');
-        if (this.ignoreErrorCodes.indexOf(errorCode) > -1) return {};
+        const retMsg = this.safeString2(response, 'ret_msg', 'retMsg');
+
+        if (errorCode && retMsg && (errorCode in ignoreErrorCodes) && (retMsg in ignoreErrorCodes[errorCode])) return ignoreErrorCodes[errorCode][retMsg];
         return super.handleErrors(httpCode, reason, url, method, headers, body, response, requestHeaders, requestBody);
     }
 

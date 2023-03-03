@@ -1,3 +1,6 @@
 {
-    "BTC": 0.01
+    "BTC/USDT:USDT": {
+        "batchSize": 10,
+        "idealSize": 0.1
+    }
 }

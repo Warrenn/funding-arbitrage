@@ -68,10 +68,16 @@ while (true) {
     let nextTradingHour = (lastTradingHour + settings.fundingHourlyFreq) % 24;
     let nextOnboardingHour = (24 + (nextTradingHour - settings.onBoardingHours)) % 24;
 
-    //todo:remove dev work here
+    //HACK:remove dev work here
     currentHour = nextTradingHour;
     tradingState.fundingHour = nextTradingHour;
-    tradingState.longMaxLeverage = 25;
+    tradingState.longMaxLeverage = 100;
+    tradingState.orderSize = 2;
+    //short as maker
+    //long as maker
+    //binance as short
+    //binance as long
+    //...
 
     if (tradingState.fundingHour != nextTradingHour && tradingState.state != 'closed') {
         let longExchange = exchangeCache[tradingState.longExchange];
