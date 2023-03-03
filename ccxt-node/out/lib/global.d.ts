@@ -104,7 +104,7 @@ export declare function getPositionSize({ exchange, symbol }: {
 }): Promise<number>;
 export declare function closePositions(params: AdjustPositionDetails): Promise<void>;
 export declare function openPositions(params: AdjustPositionDetails): Promise<void>;
-export declare function adjustUntilTargetMet({ target, getPositionSize, createOrder, idealSize, contractSize, maxSize, minSize }: {
+export declare function adjustUntilTargetMet({ target, getPositionSize, createOrder, idealSize, contractSize, maxSize, minSize, direction }: {
     target: number;
     getPositionSize: () => Promise<number>;
     createOrder: (orderSize: number) => Promise<any>;
@@ -112,5 +112,6 @@ export declare function adjustUntilTargetMet({ target, getPositionSize, createOr
     contractSize: number;
     maxSize: number;
     minSize: number;
+    direction?: 'up' | 'down';
 }): Promise<void>;
 export declare function adjustPositions({ longExchange, longSymbol, shortExchange, shortSymbol, makerSide, idealTradeSizes, reduceOnly, orderSize, shortSide, longSide, trailPct }: AdjustPositionDetails): Promise<void>;

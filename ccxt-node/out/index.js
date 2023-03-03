@@ -29,10 +29,14 @@ while (true) {
     let nextTradingHour = (lastTradingHour + settings.fundingHourlyFreq) % 24;
     let nextOnboardingHour = (24 + (nextTradingHour - settings.onBoardingHours)) % 24;
     //HACK:remove dev work here
-    currentHour = lastTradingHour;
-    tradingState.fundingHour = lastTradingHour;
+    currentHour = nextOnboardingHour;
+    tradingState.fundingHour = nextTradingHour;
     tradingState.longMaxLeverage = 100;
+    tradingState.shortMaxLeverage = 100;
     tradingState.orderSize = 1.2;
+    tradingState.longExchange = "bybit";
+    tradingState.shortExchange = "okx";
+    tradingState.makerSide = 'short';
     //short as maker
     //long as maker
     //binance as short

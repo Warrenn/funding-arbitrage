@@ -52,6 +52,7 @@ exchangeCache['gate'] = await exchangeFactory['gate']({ ssm, apiCredentialsKeyPr
 exchangeCache['coinex'] = await exchangeFactory['coinex']({ ssm, apiCredentialsKeyPrefix });
 
 let referenceData: TradePairReferenceData = JSON.parse(await fs.promises.readFile(path.resolve(refDataFile), { encoding: 'utf8' }));
+//todo:replace with idealOrderValue from settings
 let idealTradeSizes: IdealTradeSizes = JSON.parse(await fs.promises.readFile(path.resolve(idealTradeSizesFile), { encoding: 'utf8' }));
 let settings: Settings = await getSettings({ ssm, settingsPrefix });
 let tradingState: TradeState = await getTradeState({ ssm, tradeStatusKey });
@@ -69,10 +70,14 @@ while (true) {
     let nextOnboardingHour = (24 + (nextTradingHour - settings.onBoardingHours)) % 24;
 
     //HACK:remove dev work here
-    currentHour = lastTradingHour;
-    tradingState.fundingHour = lastTradingHour;
+    currentHour = nextOnboardingHour;
+    tradingState.fundingHour = nextTradingHour;
     tradingState.longMaxLeverage = 100;
+    tradingState.shortMaxLeverage = 100;
     tradingState.orderSize = 1.2;
+    tradingState.longExchange = "bybit";
+    tradingState.shortExchange = "okx";
+    tradingState.makerSide = 'short';
     //short as maker
     //long as maker
     //binance as short

@@ -426,7 +426,7 @@ export async function createSlOrders({ longExchange, longSymbol, shortExchange, 
     let price = liquidationPrice * (1 + limit);
     let stopLossPrice = liquidationPrice * (1 + limit + trigger);
     await adjustUntilTargetMet({
-        target: longPositionSize, contractSize: longContractSize, idealSize: longMaxSize, maxSize: longMaxSize, minSize: longMinSize,
+        target: longPositionSize, contractSize: longContractSize, idealSize: longMaxSize, maxSize: longMaxSize, minSize: longMinSize, direction: 'up',
         getPositionSize: () => sizeOfStopLossOrders({ exchange: longExchange, position: longPosition, symbol: longSymbol }),
         createOrder: (size) => createLimitOrder({ exchange: longExchange, side: "sell", size, symbol: longSymbol, price, stopLossPrice, positionId: longPosition.id })
     });
@@ -434,7 +434,7 @@ export async function createSlOrders({ longExchange, longSymbol, shortExchange, 
     price = liquidationPrice * (1 - limit);
     stopLossPrice = liquidationPrice * (1 - limit - trigger);
     await adjustUntilTargetMet({
-        target: shortPositionSize, contractSize: shortContractSize, idealSize: shortMaxSize, maxSize: shortMaxSize, minSize: shortMinSize,
+        target: shortPositionSize, contractSize: shortContractSize, idealSize: shortMaxSize, maxSize: shortMaxSize, minSize: shortMinSize, direction: 'up',
         getPositionSize: () => sizeOfStopLossOrders({ exchange: shortExchange, position: shortPosition, symbol: shortSymbol }),
         createOrder: (size) => createLimitOrder({ exchange: shortExchange, side: "buy", size, symbol: shortSymbol, price, stopLossPrice, positionId: shortPosition.id })
     });
@@ -452,7 +452,7 @@ export async function createTpOrders({ longExchange, longSymbol, shortExchange, 
     let price = maxLong * (1 - limit);
     let takeProfitPrice = maxLong * (1 - limit - trigger);
     await adjustUntilTargetMet({
-        target: longPositionSize, contractSize: longContractSize, idealSize: longMaxSize, maxSize: longMaxSize, minSize: longMinSize,
+        target: longPositionSize, contractSize: longContractSize, idealSize: longMaxSize, maxSize: longMaxSize, minSize: longMinSize, direction: 'up',
         getPositionSize: () => sizeOfTakeProfitOrders({ exchange: longExchange, position: longPosition, symbol: longSymbol }),
         createOrder: (size) => createLimitOrder({ exchange: longExchange, side: "sell", size, symbol: longSymbol, price, takeProfitPrice, positionId: longPosition.id })
     });
@@ -461,7 +461,7 @@ export async function createTpOrders({ longExchange, longSymbol, shortExchange, 
     price = minShort * (1 + limit);
     takeProfitPrice = minShort * (1 + limit + trigger);
     await adjustUntilTargetMet({
-        target: shortPositionSize, contractSize: shortContractSize, idealSize: shortMaxSize, maxSize: shortMaxSize, minSize: shortMinSize,
+        target: shortPositionSize, contractSize: shortContractSize, idealSize: shortMaxSize, maxSize: shortMaxSize, minSize: shortMinSize, direction: 'up',
         getPositionSize: () => sizeOfTakeProfitOrders({ exchange: shortExchange, position: shortPosition, symbol: shortSymbol }),
         createOrder: (size) => createLimitOrder({ exchange: shortExchange, side: "buy", size, symbol: shortSymbol, price, takeProfitPrice, positionId: shortPosition.id })
     });
@@ -506,8 +506,7 @@ function getLimits({ exchange, symbol, idealTradeSizes }) {
         minSize
     };
 }
-export async function adjustUntilTargetMet({ target, getPositionSize, createOrder, idealSize, contractSize, maxSize, minSize }) {
-    let direction;
+export async function adjustUntilTargetMet({ target, getPositionSize, createOrder, idealSize, contractSize, maxSize, minSize, direction }) {
     target = Math.abs(target);
     while (true) {
         let currentSize = Math.abs(await getPositionSize());
@@ -560,6 +559,7 @@ export async function adjustPositions({ longExchange, longSymbol, shortExchange,
             contractSize: takerContractSize,
             maxSize: takerMaxSize,
             minSize: takerMinSize,
+            direction: (orderSize == 0) ? 'down' : 'up',
             getPositionSize: () => getPositionSize({ exchange: takerExchange, symbol: takerSymbol }),
             createOrder: (size) => createImmediateOrder({ exchange: takerExchange, side: takerOrderSide, size, symbol: takerSymbol, reduceOnly })
         });
