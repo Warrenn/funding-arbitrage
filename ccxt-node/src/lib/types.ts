@@ -78,7 +78,7 @@ export type TradeState = {
     shortExchange: string,
     longSymbol: string,
     shortSymbol: string,
-    orderSize: number,
+    targetSize: number,
     state: 'open' | 'filled' | 'closed',
     makerSide: MakerSide,
     longRiskIndex: number,

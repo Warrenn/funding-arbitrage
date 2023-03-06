@@ -7,7 +7,6 @@ import dotenv from 'dotenv';
 
 import {
     FundingRatesChainFunction,
-    IdealTradeSizes,
     SetRiskLimitFunction,
     Settings,
     TradePairReferenceData,
@@ -52,8 +51,6 @@ exchangeCache['gate'] = await exchangeFactory['gate']({ ssm, apiCredentialsKeyPr
 exchangeCache['coinex'] = await exchangeFactory['coinex']({ ssm, apiCredentialsKeyPrefix });
 
 let referenceData: TradePairReferenceData = JSON.parse(await fs.promises.readFile(path.resolve(refDataFile), { encoding: 'utf8' }));
-//todo:replace with idealOrderValue from settings
-let idealTradeSizes: IdealTradeSizes = JSON.parse(await fs.promises.readFile(path.resolve(idealTradeSizesFile), { encoding: 'utf8' }));
 let settings: Settings = await getSettings({ ssm, settingsPrefix });
 let tradingState: TradeState = await getTradeState({ ssm, tradeStatusKey });
 
@@ -75,7 +72,7 @@ while (true) {
         tradingState.fundingHour = nextTradingHour;
         tradingState.longMaxLeverage = 100;
         tradingState.shortMaxLeverage = 100;
-        tradingState.orderSize = 1.2;
+        tradingState.targetSize = 1.2;
         tradingState.longExchange = "bybit";
         tradingState.shortExchange = "okx";
         tradingState.makerSide = 'short';
@@ -95,7 +92,9 @@ while (true) {
                 shortExchange,
                 shortSymbol: tradingState.shortSymbol,
                 makerSide: tradingState.makerSide,
-                idealTradeSizes
+                idealOrderValue: settings.idealOrderValue,
+                idealBatchSize: settings.idealBatchSize,
+                trailPct: settings.trailPct
             });
 
             await longExchange.cancelAllOrders(tradingState.longSymbol);
@@ -114,12 +113,13 @@ while (true) {
 
             //todo:get investmentFundsAvailable from the balance of the common trading account
             let investmentAmount = investmentFundsAvailable * settings.investmentMargin;
+            let investment = investmentAmount * settings.initialMargin;
 
             let fundingRates = await processFundingRatesPipeline(fundingsRatePipeline)({ nextFundingHour: nextTradingHour });
             let tradePairs = await calculateBestRoiTradingPairs({
                 fundingRates,
                 exchangeCache,
-                investment: investmentAmount,
+                investment,
                 referenceData
             });
 
@@ -136,19 +136,19 @@ while (true) {
             let longMarket = longExchange.market(bestPair.longSymbol);
             let shortMarket = shortExchange.market(bestPair.shortSymbol);
 
-            let longContractSize = longMarket.contractSize || 1;
-            let shortContractSize = shortMarket.contractSize || 1;
+            let longPrecision = longMarket.precision.amount || 1;
+            let shortPrecision = shortMarket.precision.amount || 1;
 
-            let orderSize = ((investmentAmount * settings.initialMargin) / 2) / ((longRate + shortRate) / 2);
+            let orderSize = investment / (longRate + shortRate);
 
-            orderSize = Math.floor(orderSize / longContractSize) * longContractSize;
-            orderSize = Math.floor(orderSize / shortContractSize) * shortContractSize;
+            orderSize = Math.floor(orderSize / longPrecision) * longPrecision;
+            orderSize = Math.floor(orderSize / shortPrecision) * shortPrecision;
 
             tradingState.fundingHour = nextTradingHour;
             tradingState.longExchange = bestPair.longExchange;
             tradingState.longSymbol = bestPair.longSymbol;
             tradingState.makerSide = bestPair.makerSide;
-            tradingState.orderSize = orderSize;
+            tradingState.targetSize = orderSize;
             tradingState.shortExchange = bestPair.shortExchange;
             tradingState.shortSymbol = bestPair.shortSymbol;
             tradingState.state = 'open';
@@ -173,7 +173,7 @@ while (true) {
             let symbol = tradingState.longSymbol;
 
             let rate = (await exchange.fetchOHLCV(symbol, undefined, undefined, 1))[0][4];
-            let requiredLiquidity = (tradingState.orderSize * rate) / settings.initialMargin;
+            let requiredLiquidity = (tradingState.targetSize * rate) / settings.initialMargin;
             //place deposit information
 
             await (<SetRiskLimitFunction>longExchange.setRiskLimit)(tradingState.longRiskIndex, tradingState.longSymbol);
@@ -188,9 +188,10 @@ while (true) {
                 shortExchange,
                 shortSymbol: tradingState.shortSymbol,
                 makerSide: tradingState.makerSide,
-                targetSize: tradingState.orderSize,
+                targetSize: tradingState.targetSize,
                 trailPct: settings.trailPct,
-                idealTradeSizes
+                idealOrderValue: settings.idealOrderValue,
+                idealBatchSize: settings.idealBatchSize
             });
 
             await createSlOrders({
@@ -199,8 +200,7 @@ while (true) {
                 longExchange,
                 longSymbol: tradingState.longSymbol,
                 shortExchange,
-                shortSymbol: tradingState.shortSymbol,
-                idealTradeSizes
+                shortSymbol: tradingState.shortSymbol
             });
 
             await createTpOrders({
@@ -209,8 +209,7 @@ while (true) {
                 longExchange,
                 longSymbol: tradingState.longSymbol,
                 shortExchange,
-                shortSymbol: tradingState.shortSymbol,
-                idealTradeSizes
+                shortSymbol: tradingState.shortSymbol
             });
 
             tradingState.state = 'filled';
