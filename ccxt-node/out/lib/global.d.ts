@@ -1,6 +1,6 @@
 import ccxt, { ExchangePro } from 'ccxt';
 import AWS from 'aws-sdk';
-import { ExchangeFactory, AdjustPositionDetails, FundingRates, CreateOrderDetails, FundingRateCalculation, LeverageTier, RoiTradePair, TradeState, FundingRatesChainFunction, TradePairReferenceData, IdealTradeSizes } from './types.js';
+import { ExchangeFactory, AdjustPositionDetails, FundingRates, CreateOrderDetails, FundingRateCalculation, LeverageTier, RoiTradePair, TradeState, FundingRatesChainFunction, TradePairReferenceData } from './types.js';
 export declare function getCredentials({ ssm, name, apiCredentialsKeyPrefix }: {
     ssm: AWS.SSM;
     name: string;
@@ -80,23 +80,21 @@ export declare function calculateLiquidationPrice({ exchange, market, position }
     market: ccxt.Market;
     position: any;
 }): Promise<number>;
-export declare function createSlOrders({ longExchange, longSymbol, shortExchange, shortSymbol, limit, trigger, idealTradeSizes }: {
+export declare function createSlOrders({ longExchange, longSymbol, shortExchange, shortSymbol, limit, trigger }: {
     longExchange: ccxt.pro.Exchange;
     shortExchange: ccxt.pro.Exchange;
     longSymbol: string;
     shortSymbol: string;
     limit: number;
     trigger: number;
-    idealTradeSizes: IdealTradeSizes;
 }): Promise<void>;
-export declare function createTpOrders({ longExchange, longSymbol, shortExchange, shortSymbol, limit, trigger, idealTradeSizes }: {
+export declare function createTpOrders({ longExchange, longSymbol, shortExchange, shortSymbol, limit, trigger }: {
     longExchange: ccxt.pro.Exchange;
     shortExchange: ccxt.pro.Exchange;
     longSymbol: string;
     shortSymbol: string;
     limit: number;
     trigger: number;
-    idealTradeSizes: IdealTradeSizes;
 }): Promise<void>;
 export declare function getPositionSize({ exchange, symbol }: {
     exchange: ccxt.ExchangePro;
@@ -114,4 +112,4 @@ export declare function adjustUntilTargetMet({ target, getPositionSize, createOr
     minSize: number;
     direction?: 'up' | 'down';
 }): Promise<void>;
-export declare function adjustPositions({ longExchange, longSymbol, shortExchange, shortSymbol, makerSide, idealTradeSizes, reduceOnly, orderSize, shortSide, longSide, trailPct }: AdjustPositionDetails): Promise<void>;
+export declare function adjustPositions({ longExchange, longSymbol, shortExchange, shortSymbol, makerSide, reduceOnly, idealOrderValue, idealBatchSize, targetSize, shortSide, longSide, trailPct }: AdjustPositionDetails): Promise<void>;

@@ -250,7 +250,6 @@ export function calculateMaxLeverage({
 
     for (let i = leverageTiers.length - 1; i >= 0; i--) {
         let tier = leverageTiers[i];
-        //todo:include maintenance margin
         let leveragedInvestment = tier.maxLeverage * investment;
         let maxTradableNotion = (currentPrice) ?
             currentPrice * contractSize * tier.maxNotional :
@@ -453,8 +452,6 @@ export async function createOrder({
     retryLimit = 10,
     immediate = false
 }: CreateOrderDetails): Promise<ccxt.Order> {
-    //todo:round to precision 
-    //todo:check for sufficient funds
     let params: any = { type: 'limit', postOnly: true };
 
     if (immediate || stopLossPrice) {
@@ -795,57 +792,69 @@ export async function adjustPositions({
         symbol: takerSymbol
     });
 
-    while (true) {
-        let makerPositionSize = Math.abs(await getPositionSize({ exchange: makerExchange, symbol: makerSymbol }));
+    let balanceHedge = async () => {
+        while (true) {
+            let makerPositionSize = Math.abs(await getPositionSize({ exchange: makerExchange, symbol: makerSymbol }));
 
-        await adjustUntilTargetMet({
-            target: makerPositionSize,
-            idealSize: takerMaxSize,
-            contractSize: takerContractSize,
-            maxSize: takerMaxSize,
-            minSize: takerMinSize,
-            direction: (targetSize == 0) ? 'down' : 'up',
-            getPositionSize: () => getPositionSize({ exchange: takerExchange, symbol: takerSymbol }),
-            createOrder: (size) => createImmediateOrder({ exchange: takerExchange, side: takerOrderSide, size, symbol: takerSymbol, reduceOnly })
-        })
-        if ((Math.abs(makerPositionSize - targetSize) < makerMinSize) || (targetSize && makerPositionSize > targetSize)) break;
-
-        let currentPrice = (await makerExchange.fetchOHLCV(makerSymbol, undefined, undefined, 1))[0]?.[4];
-        let makerIdealSize = idealOrderValue / (currentPrice || 1);
-        let minTrailPrice = currentPrice * (1 - trailPct);
-        let maxTrailPrice = currentPrice * (1 + trailPct);
-
-        let orders = await makerExchange.fetchOpenOrders(makerSymbol);
-        orders = orders.filter((o: any) => o.side == makerOrderSide && !o.triggerPrice);
-
-        for (let i = 0; i < orders.length && currentPrice; i++) {
-            let order = orders[i];
-            if (order.price > minTrailPrice && order.price < maxTrailPrice) continue;
-            await makerExchange.cancelOrder(order.id, makerSymbol);
+            await adjustUntilTargetMet({
+                target: makerPositionSize,
+                idealSize: takerMaxSize,
+                contractSize: takerContractSize,
+                maxSize: takerMaxSize,
+                minSize: takerMinSize,
+                direction: (targetSize == 0) ? 'down' : 'up',
+                getPositionSize: () => getPositionSize({ exchange: takerExchange, symbol: takerSymbol }),
+                createOrder: (size) => createImmediateOrder({ exchange: takerExchange, side: takerOrderSide, size, symbol: takerSymbol, reduceOnly })
+            })
+            if ((Math.abs(makerPositionSize - targetSize) < makerMinSize) || (targetSize && makerPositionSize > targetSize)) break;
         }
-
-        orders = (await makerExchange.fetchOpenOrders(makerSymbol)).filter((o: any) => o.side == makerOrderSide && !o.triggerPrice);
-        let ordersInProgress = orders.length;
-        if (ordersInProgress == idealBatchSize) continue;
-
-        let totalInOrders = orders.reduce((p, order) => p + Math.abs((order.remaining != undefined) ? order.remaining : order.amount), 0) * makerContractSize;
-        makerPositionSize = Math.abs(await getPositionSize({ exchange: makerExchange, symbol: makerSymbol }));
-
-        let size = (targetSize == 0) ?
-            (makerPositionSize - totalInOrders) :
-            targetSize - (totalInOrders + makerPositionSize);
-
-        if (size < makerMinSize) continue;
-
-        size = calculateOrderSize({
-            contractSize: makerContractSize,
-            idealSize: makerIdealSize,
-            maxSize: makerMaxSize,
-            orderSize: size
-        });
-
-        await createOrder({ exchange: makerExchange, side: makerOrderSide, size, symbol: makerSymbol, reduceOnly });
     }
+
+    let placeOrders = async () => {
+
+        while (true) {
+
+            let currentPrice = (await makerExchange.fetchOHLCV(makerSymbol, undefined, undefined, 1))[0]?.[4];
+            let makerIdealSize = idealOrderValue / (currentPrice || 1);
+            let minTrailPrice = currentPrice * (1 - trailPct);
+            let maxTrailPrice = currentPrice * (1 + trailPct);
+
+            let orders = await makerExchange.fetchOpenOrders(makerSymbol);
+            orders = orders.filter((o: any) => o.side == makerOrderSide && !o.triggerPrice);
+
+            for (let i = 0; i < orders.length && currentPrice; i++) {
+                let order = orders[i];
+                if (!order?.id || !order?.price) continue;
+                if (order.price > minTrailPrice && order.price < maxTrailPrice) continue;
+                await makerExchange.cancelOrder(order.id, makerSymbol);
+            }
+
+            orders = (await makerExchange.fetchOpenOrders(makerSymbol)).filter((o: any) => o.side == makerOrderSide && !o.triggerPrice);
+            let ordersInProgress = orders.length;
+            if (ordersInProgress == idealBatchSize) continue;
+
+            let totalInOrders = orders.reduce((p, order) => p + Math.abs((order.remaining != undefined) ? order.remaining : order.amount), 0) * makerContractSize;
+            let makerPositionSize = Math.abs(await getPositionSize({ exchange: makerExchange, symbol: makerSymbol }));
+            if ((Math.abs(makerPositionSize - targetSize) < makerMinSize) || (targetSize && makerPositionSize > targetSize)) break;
+
+            let size = (targetSize == 0) ?
+                (makerPositionSize - totalInOrders) :
+                targetSize - (totalInOrders + makerPositionSize);
+
+            if (size < makerMinSize) continue;
+
+            size = calculateOrderSize({
+                contractSize: makerContractSize,
+                idealSize: makerIdealSize,
+                maxSize: makerMaxSize,
+                orderSize: size
+            });
+
+            await createOrder({ exchange: makerExchange, side: makerOrderSide, size, symbol: makerSymbol, reduceOnly });
+        }
+    }
+
+    await Promise.all([balanceHedge(), placeOrders()]);
 
     let orders = await makerExchange.fetchOpenOrders(makerSymbol);
     orders = orders.filter((o: any) => o.side == makerOrderSide && !o.triggerPrice);
