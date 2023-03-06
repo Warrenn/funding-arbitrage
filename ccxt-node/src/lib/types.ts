@@ -14,13 +14,6 @@ export type FetchOpenStopOrdersFunction = (symbol: string, since?: number, limit
 
 export type FundingRatesChainFunction = (fundingRates: FundingRates, nextFundingHour: number) => Promise<FundingRates>
 
-export type IdealTradeSizes = {
-    [symbol: string]: {
-        idealSize: number,
-        batchSize: number
-    }
-}
-
 export type Settings = {
     trailPct: number,
     investmentMargin: number,
@@ -28,7 +21,9 @@ export type Settings = {
     tpSlLimit: number,
     tpSlTrigger: number,
     onBoardingHours: number,
-    fundingHourlyFreq: number
+    fundingHourlyFreq: number,
+    idealOrderValue: number,
+    idealBatchSize?: number
 }
 
 export type TradePairReferenceData = {
@@ -68,13 +63,13 @@ export type AdjustPositionDetails = {
     longSymbol: string,
     shortSymbol: string,
     makerSide: MakerSide,
-    idealTradeSizes: IdealTradeSizes,
+    idealOrderValue: number,
+    idealBatchSize?: number,
     shortSide?: Order["side"],
     longSide?: Order["side"],
     trailPct?: number,
-    orderSize?: number,
-    reduceOnly?: boolean,
-    tolerance?: number
+    targetSize?: number,
+    reduceOnly?: boolean
 }
 
 export type TradeState = {

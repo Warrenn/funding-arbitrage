@@ -73,7 +73,7 @@ export declare function sizeOfStopLossOrders(params: {
     position: any;
     symbol: string;
 }): Promise<number>;
-export declare function createLimitOrder({ exchange, symbol, side, size, price, getPrice, reduceOnly, stopLossPrice, takeProfitPrice, positionId, retryLimit, immediate }: CreateOrderDetails): Promise<ccxt.Order>;
+export declare function createOrder({ exchange, symbol, side, size, price, getPrice, reduceOnly, stopLossPrice, takeProfitPrice, positionId, retryLimit, immediate }: CreateOrderDetails): Promise<ccxt.Order>;
 export declare function createImmediateOrder(params: CreateOrderDetails): Promise<ccxt.Order>;
 export declare function calculateLiquidationPrice({ exchange, market, position }: {
     exchange: ccxt.pro.Exchange;

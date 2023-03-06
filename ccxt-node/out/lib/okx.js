@@ -29,10 +29,15 @@ export class OkxExchange extends ccxt.pro.okex {
         }
     }
     async fetchOrder(id, symbol, params) {
-        let openParams = { ordType: 'conditional', algoId: id };
-        const clientOrderId = this.safeString2(params, 'clOrdId', 'clientOrderId');
-        if (clientOrderId)
-            openParams['clOrdId'] = clientOrderId;
+        try {
+            let order = await super.fetchOrder(id, symbol, params);
+            if (order === null || order === void 0 ? void 0 : order.status)
+                return order;
+        }
+        catch (err) {
+            console.log(err);
+        }
+        let openParams = Object.assign(Object.assign({}, params), { ordType: 'conditional', algoId: id });
         try {
             let orders = await this.fetchOpenOrders(symbol, undefined, 1, openParams);
             if (orders.length == 1)
@@ -58,8 +63,9 @@ export class OkxExchange extends ccxt.pro.okex {
         }
         catch (err) {
             console.log(err);
+            throw err;
         }
-        return await super.fetchOrder(id, symbol, params);
+        return await super.fetchOrder(id, symbol);
     }
     async setLeverage(leverage, symbol = undefined, params = {}) {
         /**
@@ -98,20 +104,6 @@ export class OkxExchange extends ccxt.pro.okex {
             'instId': market['id'],
         };
         const response = await this.privatePostAccountSetLeverage(this.extend(request, params));
-        //
-        //     {
-        //       "code": "0",
-        //       "data": [
-        //         {
-        //           "instId": "BTC-USDT-SWAP",
-        //           "lever": "5",
-        //           "mgnMode": "isolated",
-        //           "posSide": "long"
-        //         }
-        //       ],
-        //       "msg": ""
-        //     }
-        //
         return response;
     }
 }

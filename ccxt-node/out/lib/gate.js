@@ -40,7 +40,7 @@ export class GateExchange extends ccxt.pro.gateio {
     async fetchOrder(id, symbol, params) {
         try {
             let order = await super.fetchOrder(id, symbol, params);
-            if (order)
+            if (order === null || order === void 0 ? void 0 : order.status)
                 return order;
         }
         catch (error) {

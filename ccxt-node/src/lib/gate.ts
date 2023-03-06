@@ -30,7 +30,7 @@ export class GateExchange extends ccxt.pro.gateio {
     async fetchOrder(id: string, symbol: string, params?: ccxt.Params | undefined): Promise<ccxt.Order> {
         try {
             let order = await super.fetchOrder(id, symbol, params);
-            if (order) return order;
+            if (order?.status) return order;
         }
         catch (error) {
             console.log(error);
