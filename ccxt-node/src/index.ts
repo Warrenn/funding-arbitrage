@@ -76,14 +76,19 @@ async function main() {
             //HACK:remove dev work here
             currentHour = nextOnboardingHour;
             tradingState.fundingHour = nextTradingHour;
-            tradingState.leverage = 57;
-            tradingState.longMaxLeverage = 57;
-            tradingState.shortMaxLeverage = 57;
-            tradingState.targetSize = 1.2;
-            tradingState.longExchange = "okx";
-            tradingState.shortExchange = "bybit";
-            tradingState.makerSide = 'long';
+            tradingState.leverage = 3;
+            tradingState.longMaxLeverage = 3;
+            tradingState.longRiskIndex = 3000000;
+            tradingState.shortMaxLeverage = 5;
+            tradingState.shortRiskIndex = 5;
+            tradingState.targetSize = 10;
+            tradingState.longExchange = "gate";
+            tradingState.shortExchange = "coinex";
+            tradingState.makerSide = 'short';
+            tradingState.longSymbol = 'CAKE/USDT:USDT';
+            tradingState.shortSymbol = 'CAKE/USDT:USDT';
             settings.idealBatchSize = 10;
+            settings.trailPct = 0.005;
             //short as maker
             //long as maker
             //binance as short
@@ -180,8 +185,8 @@ async function main() {
                 let exchange = longExchange;
                 let symbol = tradingState.longSymbol;
 
-                let rate = (await exchange.fetchOHLCV(symbol, undefined, undefined, 1))[0][4];
-                let requiredLiquidity = (tradingState.targetSize * rate * tradingState.leverage) / settings.initialMargin;
+                // let rate = (await exchange.fetchOHLCV(symbol, undefined, undefined, 1))[0][4];
+                // let requiredLiquidity = (tradingState.targetSize * rate * tradingState.leverage) / settings.initialMargin;
                 //place deposit information
 
                 await (<SetRiskLimitFunction>longExchange.setRiskLimit)(tradingState.longRiskIndex, tradingState.longSymbol);

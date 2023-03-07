@@ -57,20 +57,17 @@ export declare function calculateBestRoiTradingPairs({ exchangeCache, investment
     investment: number;
     referenceData: TradePairReferenceData;
 }): Promise<RoiTradePair[]>;
-export declare function sizeOfCloseOrdersPlaced({ exchange, position, symbol, triggerType }: {
+export declare function sizeOfCloseOrdersPlaced({ exchange, symbol, triggerType }: {
     exchange: ccxt.ExchangePro;
-    position: any;
     symbol: string;
     triggerType: 'sl' | 'tp';
 }): Promise<number>;
 export declare function sizeOfTakeProfitOrders(params: {
     exchange: ccxt.ExchangePro;
-    position: any;
     symbol: string;
 }): Promise<number>;
 export declare function sizeOfStopLossOrders(params: {
     exchange: ccxt.ExchangePro;
-    position: any;
     symbol: string;
 }): Promise<number>;
 export declare function createOrder({ exchange, symbol, side, size, price, getPrice, reduceOnly, stopLossPrice, takeProfitPrice, positionId, immediate }: CreateOrderDetails): Promise<ccxt.Order>;

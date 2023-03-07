@@ -108,7 +108,8 @@ export const exchangeFactory = {
             enableRateLimit: true,
             options: {
                 fetchOrderBookLimit: 5,
-                defaultMarginMode: 'isolated'
+                defaultMarginMode: 'isolated',
+                defaultType: 'swap'
             }
         });
         await ex.loadMarkets();
@@ -297,16 +298,22 @@ export async function calculateBestRoiTradingPairs({ exchangeCache, investment, 
     return sortedPairs;
 }
 ;
-export async function sizeOfCloseOrdersPlaced({ exchange, position, symbol, triggerType }) {
+export async function sizeOfCloseOrdersPlaced({ exchange, symbol, triggerType }) {
+    var _a, _b;
+    let position = await exchange.fetchPosition(symbol) || {};
+    if (triggerType == 'sl' && ((_a = position === null || position === void 0 ? void 0 : position.info) === null || _a === void 0 ? void 0 : _a.stop_loss_price) > 0) {
+        return await getPositionSize({ exchange, symbol });
+    }
+    if (triggerType == 'tp' && ((_b = position === null || position === void 0 ? void 0 : position.info) === null || _b === void 0 ? void 0 : _b.take_profit_price) > 0) {
+        return await getPositionSize({ exchange, symbol });
+    }
     let orders = await exchange.fetchOpenStopOrders(symbol);
-    if (!(orders === null || orders === void 0 ? void 0 : orders.length))
+    if (!(orders === null || orders === void 0 ? void 0 : orders.length) || !position)
         return 0;
     let contractSize = exchange.market(symbol).contractSize || 1;
     let entryPrice = parseFloat(position.entryPrice);
     let side = position.side;
     let triggerOrders = [];
-    //todo:need to use position if it has a stop_loss price
-    // position.info.stop_loss_price > 0
     if (triggerType == 'sl' && side == "long") {
         triggerOrders = orders.filter((o) => !!o.triggerPrice && o.triggerPrice < entryPrice);
     }
@@ -374,7 +381,7 @@ export async function createImmediateOrder(params) {
 export async function calculateLiquidationPrice({ exchange, market, position }) {
     let liqPrice = position.liquidationPrice;
     if (liqPrice >= 0)
-        return liqPrice;
+        return +liqPrice;
     let size = (position.contracts || 0) * (market.contractSize || 1);
     let balances = await exchange.fetchBalance({ type: market.type || 'swap' });
     let available = (('BUSD' in balances) ? balances['BUSD'].free : 0) +
@@ -400,7 +407,7 @@ export async function createSlOrders({ longExchange, longSymbol, shortExchange, 
     if (liquidationPrice > 0) {
         await adjustUntilTargetMet({
             target: longPositionSize, contractSize: longContractSize, idealSize: longMaxSize, maxSize: longMaxSize, minSize: longMinSize, direction: 'up',
-            getPositionSize: () => sizeOfStopLossOrders({ exchange: longExchange, position: longPosition, symbol: longSymbol }),
+            getPositionSize: () => sizeOfStopLossOrders({ exchange: longExchange, symbol: longSymbol }),
             createOrder: (size) => createOrder({ exchange: longExchange, side: "sell", size, symbol: longSymbol, price, stopLossPrice, positionId: longPosition.id })
         });
     }
@@ -410,7 +417,7 @@ export async function createSlOrders({ longExchange, longSymbol, shortExchange, 
     if (liquidationPrice > 0) {
         await adjustUntilTargetMet({
             target: shortPositionSize, contractSize: shortContractSize, idealSize: shortMaxSize, maxSize: shortMaxSize, minSize: shortMinSize, direction: 'up',
-            getPositionSize: () => sizeOfStopLossOrders({ exchange: shortExchange, position: shortPosition, symbol: shortSymbol }),
+            getPositionSize: () => sizeOfStopLossOrders({ exchange: shortExchange, symbol: shortSymbol }),
             createOrder: (size) => createOrder({ exchange: shortExchange, side: "buy", size, symbol: shortSymbol, price, stopLossPrice, positionId: shortPosition.id })
         });
     }
@@ -424,13 +431,13 @@ export async function createTpOrders({ longExchange, longSymbol, shortExchange, 
     let shortPositionSize = Math.abs((shortPosition.contracts || 0) * shortContractSize);
     let liquidationPriceShort = await calculateLiquidationPrice({ exchange: shortExchange, position: shortPosition, market: shortExchange.market(shortSymbol) });
     let entryDiff = longPosition.entryPrice - shortPosition.entryPrice;
-    let maxLong = liquidationPriceShort + entryDiff;
+    let maxLong = +liquidationPriceShort + entryDiff;
     let price = maxLong * (1 - limit);
     let takeProfitPrice = maxLong * (1 - limit - trigger);
     if (price > 0) {
         await adjustUntilTargetMet({
             target: longPositionSize, contractSize: longContractSize, idealSize: longMaxSize, maxSize: longMaxSize, minSize: longMinSize, direction: 'up',
-            getPositionSize: () => sizeOfTakeProfitOrders({ exchange: longExchange, position: longPosition, symbol: longSymbol }),
+            getPositionSize: () => sizeOfTakeProfitOrders({ exchange: longExchange, symbol: longSymbol }),
             createOrder: (size) => createOrder({ exchange: longExchange, side: "sell", size, symbol: longSymbol, price, takeProfitPrice, positionId: longPosition.id })
         });
     }
@@ -441,7 +448,7 @@ export async function createTpOrders({ longExchange, longSymbol, shortExchange, 
     if (price > 0) {
         await adjustUntilTargetMet({
             target: shortPositionSize, contractSize: shortContractSize, idealSize: shortMaxSize, maxSize: shortMaxSize, minSize: shortMinSize, direction: 'up',
-            getPositionSize: () => sizeOfTakeProfitOrders({ exchange: shortExchange, position: shortPosition, symbol: shortSymbol }),
+            getPositionSize: () => sizeOfTakeProfitOrders({ exchange: shortExchange, symbol: shortSymbol }),
             createOrder: (size) => createOrder({ exchange: shortExchange, side: "buy", size, symbol: shortSymbol, price, takeProfitPrice, positionId: shortPosition.id })
         });
     }
@@ -470,12 +477,12 @@ function calculateOrderSize({ idealSize, contractSize, maxSize, orderSize }) {
 function getLimits({ exchange, symbol }) {
     var _a, _b;
     let market = exchange.market(symbol);
-    let contractSize = market.contractSize || 1;
-    let maxSize = (((_a = market.limits.amount) === null || _a === void 0 ? void 0 : _a.max) || 1);
-    let minSize = (((_b = market.limits.amount) === null || _b === void 0 ? void 0 : _b.min) || 1);
-    if (contractSize < minSize)
+    let contractSize = +(market.contractSize || 1);
+    let maxSize = +(((_a = market.limits.amount) === null || _a === void 0 ? void 0 : _a.max) || 0);
+    let minSize = +(((_b = market.limits.amount) === null || _b === void 0 ? void 0 : _b.min) || 0);
+    if (!minSize)
         minSize = contractSize;
-    if (maxSize < minSize)
+    if (!maxSize)
         maxSize = minSize;
     return {
         contractSize,
