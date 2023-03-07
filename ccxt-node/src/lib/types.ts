@@ -53,7 +53,6 @@ export type CreateOrderDetails = {
     takeProfitPrice?: number,
     price?: number,
     positionId?: string,
-    retryLimit?: number,
     immediate?: boolean
 }
 

@@ -7,7 +7,7 @@ import { closePositions, createSlOrders, createTpOrders, exchangeFactory, getTra
 dotenv.config({ override: true });
 const apiCredentialsKeyPrefix = `${process.env.API_CRED_KEY_PREFIX}`, tradeStatusKey = `${process.env.TRADE_STATUS_KEY}`, coinglassSecretKey = `${process.env.COINGLASS_SECRET_KEY}`, region = `${process.env.CCXT_NODE_REGION}`, refDataFile = `${process.env.REF_DATA_FILE}`, settingsPrefix = `${process.env.SETTINGS_KEY_PREFIX}`;
 //HACK:get this from the actual funds in trading account
-let investmentFundsAvailable = 1000;
+let investmentFundsAvailable = 17000;
 let ssm = new AWS.SSM({ region });
 let exchangeCache = {};
 exchangeCache['binance'] = await exchangeFactory['binance']({ ssm, apiCredentialsKeyPrefix });
@@ -23,7 +23,10 @@ let coinGlassLink = await getCoinGlassData({ ssm, coinglassSecretKey });
 fundingsRatePipeline.push(coinGlassLink);
 if (apiCredentialsKeyPrefix.match(/\/dev\//))
     fundingsRatePipeline.push(sandBoxFundingRateLink);
-async function Main() {
+//HACK:remove dev work here
+tradingState.state = 'open';
+await main();
+async function main() {
     while (true) {
         try {
             let currentHour = (new Date()).getUTCHours();
@@ -33,12 +36,14 @@ async function Main() {
             //HACK:remove dev work here
             currentHour = nextOnboardingHour;
             tradingState.fundingHour = nextTradingHour;
-            tradingState.longMaxLeverage = 100;
-            tradingState.shortMaxLeverage = 100;
+            tradingState.leverage = 57;
+            tradingState.longMaxLeverage = 57;
+            tradingState.shortMaxLeverage = 57;
             tradingState.targetSize = 1.2;
-            tradingState.longExchange = "bybit";
-            tradingState.shortExchange = "okx";
-            tradingState.makerSide = 'short';
+            tradingState.longExchange = "okx";
+            tradingState.shortExchange = "bybit";
+            tradingState.makerSide = 'long';
+            settings.idealBatchSize = 10;
             //short as maker
             //long as maker
             //binance as short
@@ -115,7 +120,7 @@ async function Main() {
                 let exchange = longExchange;
                 let symbol = tradingState.longSymbol;
                 let rate = (await exchange.fetchOHLCV(symbol, undefined, undefined, 1))[0][4];
-                let requiredLiquidity = (tradingState.targetSize * rate) / settings.initialMargin;
+                let requiredLiquidity = (tradingState.targetSize * rate * tradingState.leverage) / settings.initialMargin;
                 //place deposit information
                 await longExchange.setRiskLimit(tradingState.longRiskIndex, tradingState.longSymbol);
                 await longExchange.setLeverage(tradingState.longMaxLeverage, tradingState.longSymbol);

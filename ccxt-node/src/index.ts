@@ -25,7 +25,8 @@ import {
     processFundingRatesPipeline,
     getCoinGlassData,
     sandBoxFundingRateLink,
-    getSettings
+    getSettings,
+    createOrder
 } from './lib/global.js';
 
 dotenv.config({ override: true });
@@ -39,7 +40,7 @@ const
     settingsPrefix = `${process.env.SETTINGS_KEY_PREFIX}`;
 
 //HACK:get this from the actual funds in trading account
-let investmentFundsAvailable: number = 1000;
+let investmentFundsAvailable: number = 17000;
 
 let ssm = new AWS.SSM({ region });
 
@@ -59,17 +60,11 @@ let coinGlassLink = await getCoinGlassData({ ssm, coinglassSecretKey });
 fundingsRatePipeline.push(coinGlassLink);
 if (apiCredentialsKeyPrefix.match(/\/dev\//)) fundingsRatePipeline.push(sandBoxFundingRateLink);
 
-let exchange = exchangeCache["binance"];
+//HACK:remove dev work here
+tradingState.state = 'open';
+await main();
 
-while (true) {
-    //fetch maker position && watch position after
-    //fetch taker position
-    //if taker < maker place immediate order
-    //loop until position is the same or higher than maker
-    let position = exchange.watchPosition(tradingState.longSymbol)
-}
-
-async function Main() {
+async function main() {
     while (true) {
         try {
             let currentHour = (new Date()).getUTCHours();
@@ -81,12 +76,14 @@ async function Main() {
             //HACK:remove dev work here
             currentHour = nextOnboardingHour;
             tradingState.fundingHour = nextTradingHour;
-            tradingState.longMaxLeverage = 100;
-            tradingState.shortMaxLeverage = 100;
+            tradingState.leverage = 57;
+            tradingState.longMaxLeverage = 57;
+            tradingState.shortMaxLeverage = 57;
             tradingState.targetSize = 1.2;
-            tradingState.longExchange = "bybit";
-            tradingState.shortExchange = "okx";
-            tradingState.makerSide = 'short';
+            tradingState.longExchange = "okx";
+            tradingState.shortExchange = "bybit";
+            tradingState.makerSide = 'long';
+            settings.idealBatchSize = 10;
             //short as maker
             //long as maker
             //binance as short

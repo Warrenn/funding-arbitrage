@@ -19,9 +19,6 @@ export class OkxExchange extends ccxt.pro.okex {
         }
         return await super.createOrder(symbol, type, side, amount, price, params);
     }
-    async setIsolationMode(isoMode, type) {
-        return await this.privatePostAccountSetIsolatedMode({ isoMode, type });
-    }
     async cancelAllOrders(...args) {
         let orders = await super.fetchOpenOrders(args[0]);
         for (let i = 0; i < orders.length; i++) {

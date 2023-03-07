@@ -73,7 +73,7 @@ export declare function sizeOfStopLossOrders(params: {
     position: any;
     symbol: string;
 }): Promise<number>;
-export declare function createOrder({ exchange, symbol, side, size, price, getPrice, reduceOnly, stopLossPrice, takeProfitPrice, positionId, retryLimit, immediate }: CreateOrderDetails): Promise<ccxt.Order>;
+export declare function createOrder({ exchange, symbol, side, size, price, getPrice, reduceOnly, stopLossPrice, takeProfitPrice, positionId, immediate }: CreateOrderDetails): Promise<ccxt.Order>;
 export declare function createImmediateOrder(params: CreateOrderDetails): Promise<ccxt.Order>;
 export declare function calculateLiquidationPrice({ exchange, market, position }: {
     exchange: ccxt.pro.Exchange;
@@ -102,7 +102,7 @@ export declare function getPositionSize({ exchange, symbol }: {
 }): Promise<number>;
 export declare function closePositions(params: AdjustPositionDetails): Promise<void>;
 export declare function openPositions(params: AdjustPositionDetails): Promise<void>;
-export declare function adjustUntilTargetMet({ target, getPositionSize, createOrder, idealSize, contractSize, maxSize, minSize, direction }: {
+export declare function adjustUntilTargetMet({ target, getPositionSize, createOrder, idealSize, contractSize, maxSize, minSize, direction, sleepTimeout, retryLimit }: {
     target: number;
     getPositionSize: () => Promise<number>;
     createOrder: (orderSize: number) => Promise<any>;
@@ -111,5 +111,7 @@ export declare function adjustUntilTargetMet({ target, getPositionSize, createOr
     maxSize: number;
     minSize: number;
     direction?: 'up' | 'down';
+    sleepTimeout?: number;
+    retryLimit?: number;
 }): Promise<void>;
 export declare function adjustPositions({ longExchange, longSymbol, shortExchange, shortSymbol, makerSide, reduceOnly, idealOrderValue, idealBatchSize, targetSize, shortSide, longSide, trailPct }: AdjustPositionDetails): Promise<void>;

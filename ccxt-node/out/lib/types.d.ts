@@ -50,7 +50,6 @@ export declare type CreateOrderDetails = {
     takeProfitPrice?: number;
     price?: number;
     positionId?: string;
-    retryLimit?: number;
     immediate?: boolean;
 };
 export declare type AdjustPositionDetails = {
