@@ -148,7 +148,7 @@ for (let i = 0; i < keys.length; i++) {
         ({ depositId, depositTxId, amount } = await findWithdrawal({
             address,
             currency,
-            exchange,
+            exchange: centralExchage,
             onboardingHour
         }));
     }
@@ -160,7 +160,7 @@ for (let i = 0; i < keys.length; i++) {
         ({ depositId, depositTxId, amount } = await findWithdrawal({
             address,
             currency,
-            exchange,
+            exchange: centralExchage,
             onboardingHour
         }));
         await asyncSleep(250);
@@ -170,15 +170,27 @@ for (let i = 0; i < keys.length; i++) {
         let arrived = await hasDepositArrived({ exchange, currency, depositTxId });
         if (arrived) break;
         await asyncSleep(250);
+        //todo:retry limit?
     }
 
     //transfer into tradingAccount
-
     let balance = await exchange.fetchBalance();
     //if (balance.free[currency] > 0) return;
     let fundingAvailable = await exchange.fetchFundingAmount(currency);
     if (fundingAvailable == 0) throw "funds not available";
     await exchange.transferFromFundingToTrading(currency, amount);
+
+    //closing and transfer to centralAccount
+
+    //transfer into tradingAccount
+    balance = await exchange.fetchBalance();
+    //if (balance.free[currency] > 0)
+    await exchange.transferAllFromTradingToFunding(currency);
+    fundingAvailable = await exchange.fetchFundingAmount(currency);
+    if (fundingAvailable == 0) throw "funds not available";
+
+
+
 }
 
 
