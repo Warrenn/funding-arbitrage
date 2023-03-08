@@ -1,0 +1,111 @@
+-  when doing trail pricing use the orderbook best ask or best bid
+-  Gate IO leverage needs to be whole numbers
+
+{
+   "info": {
+      "id": "13372310"
+   },
+   "id": "13372310",
+   "type": "withdrawal",
+   "currency": "USDT",
+   "fee": {
+      "cost": 0,
+      "currency": "USDT"
+   }
+}
+
+[
+   {
+      "info": {
+         "coin": "USDT",
+         "chain": "BSC",
+         "amount": "20",
+         "txID": "0xf24c3c0aaa39d0710984dbb460a2dbe8144c7313172bf882fc9d0b0362c6d8ce",
+         "status": "success",
+         "toAddress": "0x762252882dd8873cf4afa4dbeee07b9d3fd06dcb",
+         "tag": "",
+         "withdrawFee": "0.3",
+         "createTime": "1678279844000",
+         "updateTime": "1678280014000",
+         "withdrawId": "13372310",
+         "withdrawType": "0"
+      },
+      "id": "13372310",
+      "txid": "0xf24c3c0aaa39d0710984dbb460a2dbe8144c7313172bf882fc9d0b0362c6d8ce",
+      "timestamp": 1678279844000,
+      "datetime": "2023-03-08T12:50:44.000Z",
+      "network": "BEP20",
+      "addressTo": "0x762252882dd8873cf4afa4dbeee07b9d3fd06dcb",
+      "type": "withdrawal",
+      "amount": 20,
+      "currency": "USDT",
+      "status": "ok",
+      "updated": 1678280014000,
+      "fee": {
+         "cost": 0.3,
+         "currency": "USDT"
+      }
+   }
+]
+[
+   {
+      "info": {
+         "id": "3292590885606748928",
+         "amount": "36959.6124",
+         "coin": "USDT",
+         "network": "BSC",
+         "status": "1",
+         "address": "0x762252882dd8873cf4afa4dbeee07b9d3fd06dcb",
+         "addressTag": "",
+         "txId": "0x61f3f8969321a9d68f147b289950c6129872245ff299c087144a1be5f0784546",
+         "insertTime": "1674212110000",
+         "transferType": "0",
+         "confirmTimes": "15/15",
+         "unlockConfirm": "0",
+         "walletType": "0"
+      },
+      "id": "3292590885606748928",
+      "txid": "0x61f3f8969321a9d68f147b289950c6129872245ff299c087144a1be5f0784546",
+      "timestamp": 1674212110000,
+      "datetime": "2023-01-20T10:55:10.000Z",
+      "network": "BSC",
+      "address": "0x762252882dd8873cf4afa4dbeee07b9d3fd06dcb",
+      "addressTo": "0x762252882dd8873cf4afa4dbeee07b9d3fd06dcb",
+      "type": "withdrawal",
+      "amount": 36959.6124,
+      "currency": "USDT",
+      "status": "canceled",
+      "internal": false
+   },
+   {
+      "info": {
+         "id": "3360837248928504833",
+         "amount": "20",
+         "coin": "USDT",
+         "network": "BSC",
+         "status": "1",
+         "address": "0x762252882dd8873cf4afa4dbeee07b9d3fd06dcb",
+         "addressTag": "",
+         "txId": "0xf24c3c0aaa39d0710984dbb460a2dbe8144c7313172bf882fc9d0b0362c6d8ce",
+         "insertTime": "1678279910000",
+         "transferType": "0",
+         "confirmTimes": "15/15",
+         "unlockConfirm": "0",
+         "walletType": "0"
+      },
+      "id": "3360837248928504833",
+      "txid": "0xf24c3c0aaa39d0710984dbb460a2dbe8144c7313172bf882fc9d0b0362c6d8ce",
+      "timestamp": 1678279910000,
+      "datetime": "2023-03-08T12:51:50.000Z",
+      "network": "BSC",
+      "address": "0x762252882dd8873cf4afa4dbeee07b9d3fd06dcb",
+      "addressTo": "0x762252882dd8873cf4afa4dbeee07b9d3fd06dcb",
+      "type": "withdrawal",
+      "amount": 20,
+      "currency": "USDT",
+      "status": "canceled",
+      "internal": false
+   }
+]
+
+index.ts:81

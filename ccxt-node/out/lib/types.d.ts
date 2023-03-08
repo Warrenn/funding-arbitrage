@@ -13,6 +13,13 @@ export declare type ExchangeFactory = ({ ssm, apiCredentialsKeyPrefix }: {
 }) => Promise<ccxt.ExchangePro>;
 export declare type FetchOpenStopOrdersFunction = (symbol: string, since?: number, limit?: number, params?: ccxt.Params) => Promise<ccxt.Order[]>;
 export declare type FundingRatesChainFunction = (fundingRates: FundingRates, nextFundingHour: number) => Promise<FundingRates>;
+export declare type TransferDetails = {
+    [exchange: string]: {
+        currency: string;
+        address: string;
+        network: string;
+    };
+};
 export declare type Settings = {
     trailPct: number;
     investmentMargin: number;
@@ -23,6 +30,9 @@ export declare type Settings = {
     fundingHourlyFreq: number;
     idealOrderValue: number;
     idealBatchSize?: number;
+    deposit: TransferDetails;
+    withdraw: TransferDetails;
+    centralExchange: string;
 };
 export declare type TradePairReferenceData = {
     [coin: string]: {
@@ -66,19 +76,23 @@ export declare type AdjustPositionDetails = {
     targetSize?: number;
     reduceOnly?: boolean;
 };
+export declare type ExchangeTradeState = {
+    exchange: string;
+    symbol: string;
+    riskIndex: number;
+    maxLeverage: number;
+    depositId?: string;
+    depositTxId?: string;
+    withdrawId?: string;
+    withdrawTxId?: string;
+};
 export declare type TradeState = {
     fundingHour: number;
-    longExchange: string;
-    shortExchange: string;
-    longSymbol: string;
-    shortSymbol: string;
+    long: ExchangeTradeState;
+    short: ExchangeTradeState;
     targetSize: number;
     state: 'open' | 'filled' | 'closed';
     makerSide: MakerSide;
-    longRiskIndex: number;
-    shortRiskIndex: number;
-    longMaxLeverage: number;
-    shortMaxLeverage: number;
     leverage: number;
 };
 export declare type FundingRateCalculation = {

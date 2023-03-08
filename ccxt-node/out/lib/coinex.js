@@ -35,5 +35,20 @@ export class CoinexExchange extends ccxt.pro.coinex {
         }
         return super.createOrder(symbol, type, side, amount, price, params);
     }
+    async setLeverage(leverage, symbol = undefined, params = {}) {
+        try {
+            return await super.setLeverage(leverage, symbol, params);
+        }
+        catch (err) {
+            if (('name' in err) &&
+                ('message' in err) &&
+                err.name === 'ExchangeError' &&
+                err.message == 'order exist') {
+                console.log(err);
+                return {};
+            }
+            throw err;
+        }
+    }
 }
 //# sourceMappingURL=coinex.js.map

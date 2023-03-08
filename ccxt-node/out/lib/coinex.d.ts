@@ -7,4 +7,5 @@ export declare class CoinexExchange extends ccxt.pro.coinex {
     createOrder(symbol: string, type: Order['type'], side: Order['side'], amount: number, price?: number, params?: ccxt.Params): Promise<Order>;
     fetchOpenStopOrders: FetchOpenStopOrdersFunction;
     setRiskLimit: SetRiskLimitFunction;
+    setLeverage(leverage: number, symbol?: string | undefined, params?: any): Promise<any>;
 }

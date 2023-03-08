@@ -61,8 +61,167 @@ fundingsRatePipeline.push(coinGlassLink);
 if (apiCredentialsKeyPrefix.match(/\/dev\//)) fundingsRatePipeline.push(sandBoxFundingRateLink);
 
 //HACK:remove dev work here
-tradingState.state = 'open';
-await main();
+
+let centralExchangeKey = settings.centralExchange;
+let centralExchage = exchangeCache[centralExchangeKey];
+let depositId: string | undefined = undefined;
+let depositTxId: string | undefined = undefined;
+let amount: number | undefined;
+let currency = 'USDT';
+let onboardingHour = 6;
+let depositAmount = 20;
+
+let ignore = ['binance'];
+let keys = Object.keys(exchangeCache);
+
+async function findWithdrawal({
+    exchange,
+    currency,
+    address,
+    onboardingHour,
+    depositId
+}: {
+    exchange: ccxt.pro.Exchange,
+    currency: string,
+    address: string,
+    onboardingHour: number,
+    depositId?: string
+}): Promise<{
+    depositId?: string,
+    depositTxId?: string,
+    amount?: number
+}> {
+    let onboardingTime = new Date();
+    onboardingTime.setUTCMilliseconds(0);
+    onboardingTime.setUTCSeconds(0);
+    onboardingTime.setUTCMinutes(0);
+    onboardingTime.setUTCHours(onboardingHour);
+    let onboardingUnix = onboardingTime.getTime();
+
+    let transactions = await exchange.fetchWithdrawals(currency, undefined, 10);
+    for (let i = 0; i < transactions.length; i++) {
+        let transaction = transactions[i];
+        if (depositId && transaction.id == depositId) return {
+            depositId: transaction.id,
+            depositTxId: transaction.txid,
+            amount: transaction.amount
+        };
+        if (transaction.timestamp > onboardingUnix && transaction.address == address) return {
+            depositId: transaction.id,
+            depositTxId: transaction.txid,
+            amount: transaction.amount
+        };
+    }
+
+    return { depositId, depositTxId: undefined, amount: undefined };
+}
+
+async function hasDepositArrived({
+    exchange,
+    currency,
+    depositTxId
+}: {
+    exchange: ccxt.pro.Exchange,
+    currency: string,
+    depositTxId?: string
+}): Promise<boolean> {
+    let transactions = await exchange.fetchDeposits(currency, undefined, 10);
+    for (let i = 0; i < transactions.length; i++) {
+        let transaction = transactions[i];
+        if (transaction.txid == depositTxId) return true;
+    }
+
+    return false
+}
+
+for (let i = 0; i < keys.length; i++) {
+    let key = keys[i];
+    if (ignore.indexOf(key) > -1) continue;
+
+    let exchange = exchangeCache[key];
+    let address = settings.deposit[key].address;
+    let currency = settings.deposit[key].currency;
+    let network = settings.deposit[key].network;
+
+    //perform the deposit into accounts
+    if (!depositId) {
+        ({ depositId, depositTxId, amount } = await findWithdrawal({
+            address,
+            currency,
+            exchange,
+            onboardingHour
+        }));
+    }
+    if (!depositTxId && !depositId) {
+        let transactionResult = await centralExchage.withdraw(currency, depositAmount, address, undefined, { network });
+        depositId = transactionResult.id;
+    }
+    while (!depositTxId && depositId) {
+        ({ depositId, depositTxId, amount } = await findWithdrawal({
+            address,
+            currency,
+            exchange,
+            onboardingHour
+        }));
+        await asyncSleep(250);
+        //todo:retry limit?
+    }
+    while (true) {
+        let arrived = await hasDepositArrived({ exchange, currency, depositTxId });
+        if (arrived) break;
+        await asyncSleep(250);
+    }
+
+    //transfer into tradingAccount
+
+    let balance = await exchange.fetchBalance();
+    //if (balance.free[currency] > 0) return;
+    let fundingAvailable = await exchange.fetchFundingAmount(currency);
+    if (fundingAvailable == 0) throw "funds not available";
+    await exchange.transferFromFundingToTrading(currency, amount);
+}
+
+
+
+
+
+//if no DepositId
+//find depositId and transactionId
+
+//check if funds in futures account
+// if not check if funds in landing account
+//  if there tranfer to futures account and continue
+//  if not there
+//check on the destination exchange
+// look for deposits that have the expected memo
+// if arrived continue if not
+//  check on the holding exchange
+//    look for withdrawls that have the expected memo
+//    if not make the withdrawal with the expected memo
+//    keep waiting until deposit with memo arrived on destination exchange
+//    once arrived tranfer to futures account
+
+//if no id provided
+//check for deposits made to destination if after onboardinghour use that transactionId
+
+
+let exchange = exchangeCache['bybit'];
+//privateGetAssetV3PrivateTransferInterTransferListQuery
+//'asset/v3/private/transfer/inter-transfer/list/query'
+//const response = await this.privateGetAssetV3PrivateTransferInterTransferListQuery (this.extend (request, params));
+
+//asset/v3/private/transfer/account-coin/balance/query
+//okx:
+//let response = await exchange.fetchBalance({ instType: 'funding' });
+//bybit:
+//let response = await exchange.privateGetAssetV3PrivateTransferAccountCoinBalanceQuery({ accountType: "FUND", coin: "USDT" });
+
+
+
+//if id and no txId
+//keep looking for 
+
+
 
 async function main() {
     while (true) {
@@ -75,46 +234,46 @@ async function main() {
 
             //HACK:remove dev work here
             currentHour = nextOnboardingHour;
-            tradingState.fundingHour = nextTradingHour;
+            tradingState.fundingHour = lastTradingHour;
             tradingState.leverage = 3;
-            tradingState.longMaxLeverage = 3;
-            tradingState.longRiskIndex = 3000000;
-            tradingState.shortMaxLeverage = 5;
-            tradingState.shortRiskIndex = 5;
+            tradingState.long = {
+                exchange: "gate",
+                maxLeverage: 5,
+                riskIndex: 3000000,
+                symbol: 'APE/USDT:USDT'
+            };
+            tradingState.short = {
+                exchange: "coinex",
+                maxLeverage: 5,
+                riskIndex: 5,
+                symbol: 'APE/USDT:USDT'
+            };
             tradingState.targetSize = 10;
-            tradingState.longExchange = "gate";
-            tradingState.shortExchange = "coinex";
-            tradingState.makerSide = 'short';
-            tradingState.longSymbol = 'CAKE/USDT:USDT';
-            tradingState.shortSymbol = 'CAKE/USDT:USDT';
-            settings.idealBatchSize = 10;
+            tradingState.makerSide = 'long';
+            settings.idealBatchSize = 5;
             settings.trailPct = 0.005;
-            //short as maker
-            //long as maker
-            //binance as short
-            //binance as long
-            //...
+            settings.idealOrderValue = 5;
 
             if (tradingState.fundingHour != nextTradingHour && tradingState.state != 'closed') {
-                let longExchange = exchangeCache[tradingState.longExchange];
-                let shortExchange = exchangeCache[tradingState.shortExchange];
+                let longExchange = exchangeCache[tradingState.long.exchange];
+                let shortExchange = exchangeCache[tradingState.short.exchange];
 
                 await closePositions({
                     longExchange,
-                    longSymbol: tradingState.longSymbol,
+                    longSymbol: tradingState.long.symbol,
                     shortExchange,
-                    shortSymbol: tradingState.shortSymbol,
+                    shortSymbol: tradingState.short.symbol,
                     makerSide: tradingState.makerSide,
                     idealOrderValue: settings.idealOrderValue,
                     idealBatchSize: settings.idealBatchSize,
                     trailPct: settings.trailPct
                 });
 
-                await longExchange.cancelAllOrders(tradingState.longSymbol);
-                await shortExchange.cancelAllOrders(tradingState.shortSymbol);
+                await longExchange.cancelAllOrders(tradingState.long.symbol);
+                await shortExchange.cancelAllOrders(tradingState.short.symbol);
 
-                await longExchange.cancelAllOrders(tradingState.longSymbol, { stop: true });
-                await shortExchange.cancelAllOrders(tradingState.shortSymbol, { stop: true });
+                await longExchange.cancelAllOrders(tradingState.long.symbol, { stop: true });
+                await shortExchange.cancelAllOrders(tradingState.short.symbol, { stop: true });
 
                 //todo:withdraw money
 
@@ -158,48 +317,52 @@ async function main() {
                 orderSize = Math.floor(orderSize / shortPrecision) * shortPrecision;
 
                 tradingState.fundingHour = nextTradingHour;
-                tradingState.longExchange = bestPair.longExchange;
-                tradingState.longSymbol = bestPair.longSymbol;
+                tradingState.long = {
+                    exchange: bestPair.longExchange,
+                    symbol: bestPair.longSymbol,
+                    maxLeverage: bestPair.longMaxLeverage,
+                    riskIndex: bestPair.longRiskIndex
+                };
+                tradingState.short = {
+                    exchange: bestPair.shortExchange,
+                    symbol: bestPair.shortSymbol,
+                    maxLeverage: bestPair.shortMaxLeverage,
+                    riskIndex: bestPair.shortRiskIndex
+                }
                 tradingState.makerSide = bestPair.makerSide;
                 tradingState.targetSize = orderSize;
-                tradingState.shortExchange = bestPair.shortExchange;
-                tradingState.shortSymbol = bestPair.shortSymbol;
                 tradingState.state = 'open';
                 tradingState.leverage = bestPair.leverage;
-                tradingState.longMaxLeverage = bestPair.longMaxLeverage;
-                tradingState.longRiskIndex = bestPair.longRiskIndex;
-                tradingState.shortMaxLeverage = bestPair.shortMaxLeverage;
-                tradingState.shortRiskIndex = bestPair.shortRiskIndex;
 
                 await saveTradeState({ ssm, state: tradingState, tradeStatusKey });
             }
 
             if (tradingState.state == 'open' && tradingState.fundingHour == nextTradingHour) {
-                let longExchange = exchangeCache[tradingState.longExchange];
-                let shortExchange = exchangeCache[tradingState.shortExchange];
+                let longExchange = exchangeCache[tradingState.long.exchange];
+                let shortExchange = exchangeCache[tradingState.short.exchange];
 
                 //todo:deposit amount
                 //first check if there is a deposit en route
                 //if there is wait for it to arrive
                 //if not make a deposit
                 let exchange = longExchange;
-                let symbol = tradingState.longSymbol;
+                let symbol = tradingState.long.symbol;
 
                 // let rate = (await exchange.fetchOHLCV(symbol, undefined, undefined, 1))[0][4];
                 // let requiredLiquidity = (tradingState.targetSize * rate * tradingState.leverage) / settings.initialMargin;
                 //place deposit information
 
-                await (<SetRiskLimitFunction>longExchange.setRiskLimit)(tradingState.longRiskIndex, tradingState.longSymbol);
-                await longExchange.setLeverage(tradingState.longMaxLeverage, tradingState.longSymbol);
+                await (<SetRiskLimitFunction>longExchange.setRiskLimit)(tradingState.long.riskIndex, tradingState.long.symbol);
+                await longExchange.setLeverage(tradingState.long.maxLeverage, tradingState.long.symbol);
 
-                await (<SetRiskLimitFunction>shortExchange.setRiskLimit)(tradingState.shortRiskIndex, tradingState.shortSymbol);
-                await shortExchange.setLeverage(tradingState.shortMaxLeverage, tradingState.shortSymbol);
+                await (<SetRiskLimitFunction>shortExchange.setRiskLimit)(tradingState.short.riskIndex, tradingState.short.symbol);
+                await shortExchange.setLeverage(tradingState.short.maxLeverage, tradingState.short.symbol);
 
                 await openPositions({
                     longExchange,
-                    longSymbol: tradingState.longSymbol,
+                    longSymbol: tradingState.long.symbol,
                     shortExchange,
-                    shortSymbol: tradingState.shortSymbol,
+                    shortSymbol: tradingState.short.symbol,
                     makerSide: tradingState.makerSide,
                     targetSize: tradingState.targetSize,
                     trailPct: settings.trailPct,
@@ -211,18 +374,18 @@ async function main() {
                     limit: settings.tpSlLimit,
                     trigger: settings.tpSlTrigger,
                     longExchange,
-                    longSymbol: tradingState.longSymbol,
+                    longSymbol: tradingState.long.symbol,
                     shortExchange,
-                    shortSymbol: tradingState.shortSymbol
+                    shortSymbol: tradingState.short.symbol
                 });
 
                 await createTpOrders({
                     limit: settings.tpSlLimit,
                     trigger: settings.tpSlTrigger,
                     longExchange,
-                    longSymbol: tradingState.longSymbol,
+                    longSymbol: tradingState.long.symbol,
                     shortExchange,
-                    shortSymbol: tradingState.shortSymbol
+                    shortSymbol: tradingState.short.symbol
                 });
 
                 tradingState.state = 'filled';

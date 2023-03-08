@@ -4,13 +4,13 @@ import ccxt, { Order } from 'ccxt';
 export class CoinexExchange extends ccxt.pro.coinex {
     private positionIds: { [symbol: string]: string } = {};
 
-    market(symbol: string): ccxt.Market {
+    public market(symbol: string): ccxt.Market {
         let market = super.market(symbol);
         if (!market.limits.amount?.max) market.limits.amount = { max: 9999, min: market.limits.amount?.min };
         return market;
     }
 
-    async fetchPosition(symbol: string, params?: ccxt.Params | undefined): Promise<any> {
+    public async fetchPosition(symbol: string, params?: ccxt.Params | undefined): Promise<any> {
         let position = await super.fetchPosition(symbol, params);
         if (position.contracts == undefined && !!position.contractSize) {
             position.contracts = parseFloat(position.contractSize);
@@ -22,7 +22,7 @@ export class CoinexExchange extends ccxt.pro.coinex {
         return position;
     }
 
-    async createOrder(symbol: string, type: Order['type'], side: Order['side'], amount: number, price?: number, params?: ccxt.Params): Promise<Order> {
+    public async createOrder(symbol: string, type: Order['type'], side: Order['side'], amount: number, price?: number, params?: ccxt.Params): Promise<Order> {
         if (params?.reduceOnly && !params?.positionId) {
             if (!(symbol in this.positionIds)) await this.fetchPosition(symbol);
             params = { ...params, positionId: this.positionIds[symbol] };
@@ -39,4 +39,21 @@ export class CoinexExchange extends ccxt.pro.coinex {
         async (riskLimit: number, symbol: string) => {
 
         }
+
+    public async setLeverage(leverage: number, symbol: string | undefined = undefined, params: any = {}): Promise<any> {
+        try {
+            return await super.setLeverage(leverage, symbol, params);
+        }
+        catch (err: any) {
+            if (('name' in err) &&
+                ('message' in err) &&
+                err.name === 'ExchangeError' &&
+                err.message == 'order exist'
+            ) {
+                console.log(err);
+                return {};
+            }
+            throw err;
+        }
+    }
 }

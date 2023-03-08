@@ -14,6 +14,14 @@ export type FetchOpenStopOrdersFunction = (symbol: string, since?: number, limit
 
 export type FundingRatesChainFunction = (fundingRates: FundingRates, nextFundingHour: number) => Promise<FundingRates>
 
+export type TransferDetails = {
+    [exchange: string]: {
+        currency: string,
+        address: string,
+        network: string
+    }
+}
+
 export type Settings = {
     trailPct: number,
     investmentMargin: number,
@@ -23,7 +31,10 @@ export type Settings = {
     onBoardingHours: number,
     fundingHourlyFreq: number,
     idealOrderValue: number,
-    idealBatchSize?: number
+    idealBatchSize?: number,
+    deposit: TransferDetails,
+    withdraw: TransferDetails,
+    centralExchange: string
 }
 
 export type TradePairReferenceData = {
@@ -71,19 +82,24 @@ export type AdjustPositionDetails = {
     reduceOnly?: boolean
 }
 
+export type ExchangeTradeState = {
+    exchange: string,
+    symbol: string,
+    riskIndex: number,
+    maxLeverage: number,
+    depositId?: string,
+    depositTxId?: string,
+    withdrawId?: string,
+    withdrawTxId?: string
+}
+
 export type TradeState = {
     fundingHour: number,
-    longExchange: string,
-    shortExchange: string,
-    longSymbol: string,
-    shortSymbol: string,
+    long: ExchangeTradeState,
+    short: ExchangeTradeState,
     targetSize: number,
     state: 'open' | 'filled' | 'closed',
     makerSide: MakerSide,
-    longRiskIndex: number,
-    shortRiskIndex: number,
-    longMaxLeverage: number,
-    shortMaxLeverage: number,
     leverage: number
 }
 
