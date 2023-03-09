@@ -70,6 +70,7 @@ let amount: number | undefined;
 let currency = 'USDT';
 let onboardingHour = 6;
 let depositAmount = 20;
+let retryLimit = 100;
 
 let ignore = ['binance'];
 let keys = Object.keys(exchangeCache);
@@ -78,54 +79,72 @@ async function findWithdrawal({
     exchange,
     currency,
     address,
-    onboardingHour,
-    depositId
+    timestamp,
+    depositId,
+    limit = 10
 }: {
     exchange: ccxt.pro.Exchange,
     currency: string,
     address: string,
-    onboardingHour: number,
-    depositId?: string
+    timestamp?: number,
+    depositId?: string,
+    limit?: number
 }): Promise<{
     depositId?: string,
-    depositTxId?: string,
-    amount?: number
+    depositTxId?: string
 }> {
-    let onboardingTime = new Date();
-    onboardingTime.setUTCMilliseconds(0);
-    onboardingTime.setUTCSeconds(0);
-    onboardingTime.setUTCMinutes(0);
-    onboardingTime.setUTCHours(onboardingHour);
-    let onboardingUnix = onboardingTime.getTime();
-
-    let transactions = await exchange.fetchWithdrawals(currency, undefined, 10);
+    let transactions = await exchange.fetchWithdrawals(currency, undefined, limit);
     for (let i = 0; i < transactions.length; i++) {
         let transaction = transactions[i];
         if (depositId && transaction.id == depositId) return {
             depositId: transaction.id,
-            depositTxId: transaction.txid,
-            amount: transaction.amount
+            depositTxId: transaction.txid
         };
-        if (transaction.timestamp > onboardingUnix && transaction.address == address) return {
+        if (timestamp && transaction.timestamp > timestamp && transaction.address == address) return {
             depositId: transaction.id,
-            depositTxId: transaction.txid,
-            amount: transaction.amount
+            depositTxId: transaction.txid
         };
     }
 
-    return { depositId, depositTxId: undefined, amount: undefined };
+    return { depositId, depositTxId: undefined };
+}
+
+async function findWithdrawalByTime(params: {
+    exchange: ccxt.pro.Exchange,
+    currency: string,
+    address: string,
+    timestamp: number
+}): Promise<{
+    depositId?: string,
+    depositTxId?: string
+}> {
+    return await findWithdrawal(params);
+}
+
+async function findWithdrawalById(params: {
+    exchange: ccxt.pro.Exchange,
+    currency: string,
+    address: string,
+    depositId: string
+}): Promise<{
+    depositId?: string,
+    depositTxId?: string
+}> {
+    return await findWithdrawal(params);
 }
 
 async function hasDepositArrived({
     exchange,
     currency,
-    depositTxId
+    depositTxId,
+    limit = 10
 }: {
     exchange: ccxt.pro.Exchange,
     currency: string,
-    depositTxId?: string
+    depositTxId?: string,
+    limit?: number
 }): Promise<boolean> {
-    let transactions = await exchange.fetchDeposits(currency, undefined, 10);
+    let transactions = await exchange.fetchDeposits(currency, undefined, limit);
     for (let i = 0; i < transactions.length; i++) {
         let transaction = transactions[i];
         if (transaction.txid == depositTxId) return true;
@@ -133,6 +152,7 @@ async function hasDepositArrived({
 
     return false
 }
+
 
 for (let i = 0; i < keys.length; i++) {
     let key = keys[i];
@@ -142,43 +162,34 @@ for (let i = 0; i < keys.length; i++) {
     let address = settings.deposit[key].address;
     let currency = settings.deposit[key].currency;
     let network = settings.deposit[key].network;
+    let exchangeState = tradingState.long;
 
     //perform the deposit into accounts
-    if (!depositId) {
-        ({ depositId, depositTxId, amount } = await findWithdrawal({
-            address,
-            currency,
-            exchange: centralExchage,
-            onboardingHour
-        }));
-    }
-    if (!depositTxId && !depositId) {
-        let transactionResult = await centralExchage.withdraw(currency, depositAmount, address, undefined, { network });
-        depositId = transactionResult.id;
-    }
-    while (!depositTxId && depositId) {
-        ({ depositId, depositTxId, amount } = await findWithdrawal({
-            address,
-            currency,
-            exchange: centralExchage,
-            onboardingHour
-        }));
-        await asyncSleep(250);
-        //todo:retry limit?
-    }
-    while (true) {
-        let arrived = await hasDepositArrived({ exchange, currency, depositTxId });
-        if (arrived) break;
-        await asyncSleep(250);
-        //todo:retry limit?
-    }
+    let onboardingTime = new Date();
+    onboardingTime.setUTCMilliseconds(0);
+    onboardingTime.setUTCSeconds(0);
+    onboardingTime.setUTCMinutes(0);
+    onboardingTime.setUTCHours(onboardingHour);
+    let timestamp = onboardingTime.getTime();
+
+    await withdrawFunds({
+        address,
+        currency,
+        depositAmount,
+        network,
+        timestamp,
+        saveState: async (a) => { },
+        depositExchange: exchange,
+        withdrawalExchange: centralExchage
+    });
+
 
     //transfer into tradingAccount
     let balance = await exchange.fetchBalance();
     //if (balance.free[currency] > 0) return;
     let fundingAvailable = await exchange.fetchFundingAmount(currency);
     if (fundingAvailable == 0) throw "funds not available";
-    await exchange.transferFromFundingToTrading(currency, amount);
+    await exchange.transfer(currency, depositAmount, exchange.options.fundingAccount, exchange.options.tradingAccount);
 
     //closing and transfer to centralAccount
 
@@ -217,7 +228,94 @@ for (let i = 0; i < keys.length; i++) {
 //check for deposits made to destination if after onboardinghour use that transactionId
 
 
-let exchange = exchangeCache['bybit'];
+async function withdrawFunds({
+    address,
+    currency,
+    timestamp,
+    network,
+    depositAmount,
+    depositId,
+    depositTxId,
+    withdrawalExchange,
+    depositExchange,
+    saveState,
+    retryLimit = 100
+}: {
+    address: string,
+    currency: string,
+    timestamp: number,
+    network: string,
+    depositAmount?: number,
+    depositId?: string,
+    depositTxId?: string,
+    withdrawalExchange: ccxt.pro.Exchange,
+    depositExchange: ccxt.pro.Exchange,
+    saveState: ({ depositId, depositTxId }: { depositId?: string, depositTxId?: string }) => Promise<void>,
+    retryLimit?: number
+}) {
+    if (!depositId) {
+        ({ depositId, depositTxId } = await findWithdrawalByTime({
+            address,
+            currency,
+            exchange: withdrawalExchange,
+            timestamp
+        }));
+    }
+
+    if (!depositTxId && !depositId) {
+        let fundingBalace = await withdrawalExchange.fetchBalance({ type: withdrawalExchange.options.fundingAccount });
+        let availableInFunding = fundingBalace[currency]?.free || 0;
+
+        let tradingBalance = await withdrawalExchange.fetchBalance({ type: withdrawalExchange.options.tradingAccount });
+        let availableInTrading = tradingBalance[currency]?.free || 0;
+
+        if (!depositAmount && availableInTrading) {
+            await withdrawalExchange.transfer(currency, availableInTrading, withdrawalExchange.options.tradingAccount, withdrawalExchange.options.fundingAccount);
+        }
+
+        if (depositAmount && availableInFunding < depositAmount) {
+            let transferAmount = depositAmount - availableInFunding;
+            if (availableInTrading < transferAmount) throw `Not enough funds available ${currency} ${depositAmount} in ${withdrawalExchange.id}`;
+            await withdrawalExchange.transfer(currency, transferAmount, withdrawalExchange.options.tradingAccount, withdrawalExchange.options.fundingAccount);
+        }
+
+        if (!depositAmount) depositAmount = availableInFunding + availableInTrading;
+
+        let transactionResult = await withdrawalExchange.withdraw(currency, depositAmount, address, undefined, { network });
+        depositId = transactionResult.id;
+        await saveState({ depositId, depositTxId });
+    }
+
+    let retryCount = 0;
+    while (!depositTxId && depositId) {
+        ({ depositId, depositTxId } = await findWithdrawalById({
+            address,
+            currency,
+            exchange: withdrawalExchange,
+            depositId
+        }));
+        if (depositTxId) {
+            await saveState({ depositId, depositTxId });
+            break;
+        }
+        retryCount++;
+        if (retryCount > retryLimit)
+            throw `${currency} withdrawal on ${withdrawalExchange.id} to address ${address} with id ${depositId} could not be found`;
+        await asyncSleep(250);
+    }
+
+    retryCount = 0;
+    while (true) {
+        let arrived = await hasDepositArrived({ exchange: depositExchange, currency, depositTxId });
+        if (arrived)
+            break;
+        retryCount++;
+        if (retryCount > retryLimit)
+            throw `${currency} deposit on ${exchange.id} with TxId ${depositTxId} could not be found`;
+        await asyncSleep(250);
+    }
+}
+
 //privateGetAssetV3PrivateTransferInterTransferListQuery
 //'asset/v3/private/transfer/inter-transfer/list/query'
 //const response = await this.privateGetAssetV3PrivateTransferInterTransferListQuery (this.extend (request, params));
@@ -243,28 +341,6 @@ async function main() {
             let lastTradingHour = (Math.floor(currentHour / settings.fundingHourlyFreq) * settings.fundingHourlyFreq);
             let nextTradingHour = (lastTradingHour + settings.fundingHourlyFreq) % 24;
             let nextOnboardingHour = (24 + (nextTradingHour - settings.onBoardingHours)) % 24;
-
-            //HACK:remove dev work here
-            currentHour = nextOnboardingHour;
-            tradingState.fundingHour = lastTradingHour;
-            tradingState.leverage = 3;
-            tradingState.long = {
-                exchange: "gate",
-                maxLeverage: 5,
-                riskIndex: 3000000,
-                symbol: 'APE/USDT:USDT'
-            };
-            tradingState.short = {
-                exchange: "coinex",
-                maxLeverage: 5,
-                riskIndex: 5,
-                symbol: 'APE/USDT:USDT'
-            };
-            tradingState.targetSize = 10;
-            tradingState.makerSide = 'long';
-            settings.idealBatchSize = 5;
-            settings.trailPct = 0.005;
-            settings.idealOrderValue = 5;
 
             if (tradingState.fundingHour != nextTradingHour && tradingState.state != 'closed') {
                 let longExchange = exchangeCache[tradingState.long.exchange];
