@@ -1,5 +1,5 @@
 import { setTimeout as asyncSleep } from 'timers/promises';
-import ccxt, { ExchangePro, Order } from 'ccxt';
+import ccxt, { ExchangePro, Order, Transaction } from 'ccxt';
 import AWS from 'aws-sdk';
 
 import {
@@ -58,7 +58,8 @@ export const exchangeFactory: { [key: string]: ExchangeFactory } = {
                 fetchOrderBookLimit: 5,
                 defaultMarginMode: 'isolated',
                 fundingAccount: 'spot',
-                tradingAccount: 'future'
+                tradingAccount: 'future',
+                leaveBehind: 1
             }
         });
         if (apiCredentialsKeyPrefix.match(/\/dev\//)) ex.setSandboxMode(true);
@@ -79,7 +80,9 @@ export const exchangeFactory: { [key: string]: ExchangeFactory } = {
                 fetchOrderBookLimit: 5,
                 defaultMarginMode: 'isolated',
                 fundingAccount: 'funding',
-                tradingAccount: 'trading'
+                tradingAccount: 'trading',
+                withdrawalFee: 1,
+                leaveBehind: 1
 
             },
             timeout: 99999
@@ -98,7 +101,8 @@ export const exchangeFactory: { [key: string]: ExchangeFactory } = {
                 fetchOrderBookLimit: 5,
                 defaultMarginMode: 'isolated',
                 fundingAccount: 'funding',
-                tradingAccount: 'unified'
+                tradingAccount: 'unified',
+                leaveBehind: 1
 
             },
             apiKey: credentials.key,
@@ -118,7 +122,8 @@ export const exchangeFactory: { [key: string]: ExchangeFactory } = {
                 fetchOrderBookLimit: 5,
                 defaultMarginMode: 'isolated',
                 fundingAccount: 'funding',
-                tradingAccount: 'swap'
+                tradingAccount: 'swap',
+                leaveBehind: 1
             }
         });
         if (apiCredentialsKeyPrefix.match(/\/dev\//)) ex.setSandboxMode(true);
@@ -136,7 +141,8 @@ export const exchangeFactory: { [key: string]: ExchangeFactory } = {
                 defaultMarginMode: 'isolated',
                 defaultType: 'swap',
                 fundingAccount: 'spot',
-                tradingAccount: 'swap'
+                tradingAccount: 'swap',
+                leaveBehind: 1
             }
         });
         await ex.loadMarkets();
@@ -964,7 +970,7 @@ export async function findWithdrawal({
             depositId: transaction.id,
             depositTxId: transaction.txid
         };
-        if (timestamp && transaction.timestamp > timestamp && transaction.address == address) return {
+        if (timestamp && transaction.timestamp >= timestamp && transaction.address == address) return {
             depositId: transaction.id,
             depositTxId: transaction.txid
         };
@@ -997,7 +1003,7 @@ export async function findWithdrawalById(params: {
     return await findWithdrawal(params);
 }
 
-export async function hasDepositArrived({
+export async function findDepositByTxId({
     exchange,
     currency,
     depositTxId,
@@ -1007,14 +1013,14 @@ export async function hasDepositArrived({
     currency: string,
     depositTxId?: string,
     limit?: number
-}): Promise<boolean> {
+}): Promise<Transaction | undefined> {
     let transactions = await exchange.fetchDeposits(currency, undefined, limit);
     for (let i = 0; i < transactions.length; i++) {
         let transaction = transactions[i];
-        if (transaction.txid == depositTxId) return true;
+        if (transaction.txid == depositTxId) return transaction;
     }
 
-    return false
+    return undefined
 }
 
 export async function withdrawFunds({
@@ -1028,7 +1034,7 @@ export async function withdrawFunds({
     withdrawalExchange,
     depositExchange,
     saveState,
-    retryLimit = 10
+    retryLimit = 360
 }: {
     address: string,
     currency: string,
@@ -1068,10 +1074,16 @@ export async function withdrawFunds({
             await withdrawalExchange.transfer(currency, transferAmount, withdrawalExchange.options.tradingAccount, withdrawalExchange.options.fundingAccount);
         }
 
-        if (!depositAmount) depositAmount = availableInFunding + availableInTrading;
+        if (!depositAmount) depositAmount = (availableInFunding + availableInTrading) - (withdrawalExchange.options.leaveBehind || 1);
+        if (depositAmount <= 0) throw `Not enough funds available in ${withdrawalExchange.id}`;
 
-        //todo:let transactionResult = await withdrawalExchange.withdraw(currency, depositAmount, address, undefined, { network });
-        //todo:depositId = transactionResult.id;
+        let params: any = { network };
+        if (withdrawalExchange.options.withdrawalFee) {
+            params['fee'] = withdrawalExchange.options.withdrawalFee
+        }
+
+        let transactionResult = await withdrawalExchange.withdraw(currency, depositAmount, address, undefined, params);
+        depositId = transactionResult.id;
         await saveState({ depositId, depositTxId });
     }
 
@@ -1090,17 +1102,18 @@ export async function withdrawFunds({
         retryCount++;
         if (retryCount > retryLimit)
             throw `${currency} withdrawal on ${withdrawalExchange.id} to address ${address} with id ${depositId} could not be found`;
-        await asyncSleep(250);
+        await asyncSleep(1000);
     }
 
     retryCount = 0;
     while (true) {
-        let arrived = await hasDepositArrived({ exchange: depositExchange, currency, depositTxId });
-        if (arrived)
+        let transaction = await findDepositByTxId({ exchange: depositExchange, currency, depositTxId });
+        if (transaction?.status == 'ok')
             break;
-        retryCount++;
+        if (!transaction)
+            retryCount++;
         if (retryCount > retryLimit)
             throw `${currency} deposit on ${depositExchange.id} with TxId ${depositTxId} could not be found`;
-        await asyncSleep(300000/* 5 min: 1000 * 60 * 5 */);
+        await asyncSleep(5000);
     }
 }

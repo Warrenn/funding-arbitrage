@@ -19,6 +19,10 @@ export class OkxExchange extends ccxt.pro.okex {
         }
         return await super.createOrder(symbol, type, side, amount, price, params);
     }
+    async withdraw(currency, amount, address, tag, params) {
+        params = Object.assign(Object.assign({}, params), { pwd: this.password });
+        return await super.withdraw(currency, amount, address, tag, params);
+    }
     async cancelAllOrders(...args) {
         let orders = await super.fetchOpenOrders(args[0]);
         for (let i = 0; i < orders.length; i++) {

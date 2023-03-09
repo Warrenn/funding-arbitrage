@@ -3,6 +3,8 @@ import ccxt, { Balances, Order, Params } from 'ccxt';
 
 
 export class BinanceExchange extends ccxt.pro.binance {
+    private fetchingDeposits: boolean = false;
+
     async fetchPosition(symbol: string, params?: ccxt.Params | undefined): Promise<any> {
         let [position] = await super.fetchPositions([symbol], params);
         return position;
@@ -26,7 +28,21 @@ export class BinanceExchange extends ccxt.pro.binance {
             if (market.margin && !market.swap) params = { ...params, marginMode: 'isolated' };
         }
         return super.fetchOpenOrders(symbol, since, limit, params);
-    };
+    }
+
+    async fetchDeposits(code = undefined, since = undefined, limit = undefined, params = {}) {
+        this.fetchingDeposits = true;
+        const response = await super.fetchDeposits(code, since, limit, params);
+        this.fetchingDeposits = false;
+        return response;
+    }
+
+    parseTransaction(transaction: any, currency = undefined) {
+        if (this.fetchingDeposits) {
+            transaction = { transactionType: '0', ...transaction };
+        }
+        return super.parseTransaction(transaction, currency);
+    }
 
     async fetchBalance(params?: Params): Promise<Balances> {
         if (params?.type === this.options.fundingAccount) {

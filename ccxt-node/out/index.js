@@ -1,10 +1,9 @@
-var _a, _b;
 import { setTimeout as asyncSleep } from 'timers/promises';
 import fs from 'fs';
 import path from 'path';
 import AWS from 'aws-sdk';
 import dotenv from 'dotenv';
-import { closePositions, createSlOrders, createTpOrders, exchangeFactory, getTradeState, openPositions, saveTradeState, calculateBestRoiTradingPairs, processFundingRatesPipeline, getCoinGlassData, sandBoxFundingRateLink, getSettings } from './lib/global.js';
+import { closePositions, createSlOrders, createTpOrders, exchangeFactory, getTradeState, openPositions, saveTradeState, calculateBestRoiTradingPairs, processFundingRatesPipeline, getCoinGlassData, sandBoxFundingRateLink, getSettings, withdrawFunds } from './lib/global.js';
 dotenv.config({ override: true });
 const apiCredentialsKeyPrefix = `${process.env.API_CRED_KEY_PREFIX}`, tradeStatusKey = `${process.env.TRADE_STATUS_KEY}`, coinglassSecretKey = `${process.env.COINGLASS_SECRET_KEY}`, region = `${process.env.CCXT_NODE_REGION}`, refDataFile = `${process.env.REF_DATA_FILE}`, settingsPrefix = `${process.env.SETTINGS_KEY_PREFIX}`;
 //HACK:get this from the actual funds in trading account
@@ -27,9 +26,9 @@ if (apiCredentialsKeyPrefix.match(/\/dev\//))
 //HACK:remove dev work here
 let centralExchangeKey = settings.centralExchange;
 let centralExchage = exchangeCache[centralExchangeKey];
-let onboardingHour = 6;
+let onboardingHour = 1; //(new Date()).getUTCHours();
 let depositAmount = 20;
-let ignore = ['binance', 'okx', 'bybit', 'gate'];
+let ignore = ['binance'];
 let keys = Object.keys(exchangeCache);
 for (let i = 0; i < keys.length; i++) {
     let key = keys[i];
@@ -46,13 +45,6 @@ for (let i = 0; i < keys.length; i++) {
     onboardingTime.setUTCMinutes(0);
     onboardingTime.setUTCHours(onboardingHour);
     let timestamp = onboardingTime.getTime();
-    let fundingBalace = await exchange.fetchBalance({ type: exchange.options.fundingAccount });
-    let availableInFunding = ((_a = fundingBalace[currency]) === null || _a === void 0 ? void 0 : _a.free) || 0;
-    console.log(availableInFunding);
-    let tradingBalance = await exchange.fetchBalance({ type: exchange.options.tradingAccount });
-    let availableInTrading = ((_b = tradingBalance[currency]) === null || _b === void 0 ? void 0 : _b.free) || 0;
-    console.log(availableInTrading);
-    let response = await exchange.transfer(currency, depositAmount, exchange.options.fundingAccount, exchange.options.tradingAccount);
     // await withdrawFunds({
     //     address,
     //     currency,
@@ -64,15 +56,18 @@ for (let i = 0; i < keys.length; i++) {
     //     withdrawalExchange: centralExchage
     // });
     // await exchange.transfer(currency, depositAmount, exchange.options.fundingAccount, exchange.options.tradingAccount);
-    // await withdrawFunds({
-    //     address,
-    //     currency,
-    //     network,
-    //     timestamp,
-    //     saveState: async (a) => { },
-    //     depositExchange: centralExchage,
-    //     withdrawalExchange: exchange
-    // });
+    address = settings.withdraw[key].address;
+    currency = settings.withdraw[key].currency;
+    network = settings.withdraw[key].network;
+    await withdrawFunds({
+        address,
+        currency,
+        network,
+        timestamp,
+        saveState: async (a) => { },
+        depositExchange: centralExchage,
+        withdrawalExchange: exchange
+    });
 }
 //privateGetAssetV3PrivateTransferInterTransferListQuery
 //'asset/v3/private/transfer/inter-transfer/list/query'

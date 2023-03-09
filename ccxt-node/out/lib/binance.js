@@ -2,6 +2,7 @@ import ccxt from 'ccxt';
 export class BinanceExchange extends ccxt.pro.binance {
     constructor() {
         super(...arguments);
+        this.fetchingDeposits = false;
         this.fetchOpenStopOrders = async (symbol, since, limit, params) => {
             return this.fetchOpenOrders(symbol, since, limit, params);
         };
@@ -32,7 +33,18 @@ export class BinanceExchange extends ccxt.pro.binance {
         }
         return super.fetchOpenOrders(symbol, since, limit, params);
     }
-    ;
+    async fetchDeposits(code = undefined, since = undefined, limit = undefined, params = {}) {
+        this.fetchingDeposits = true;
+        const response = await super.fetchDeposits(code, since, limit, params);
+        this.fetchingDeposits = false;
+        return response;
+    }
+    parseTransaction(transaction, currency = undefined) {
+        if (this.fetchingDeposits) {
+            transaction = Object.assign({ transactionType: '0' }, transaction);
+        }
+        return super.parseTransaction(transaction, currency);
+    }
     async fetchBalance(params) {
         if ((params === null || params === void 0 ? void 0 : params.type) === this.options.fundingAccount) {
             const response = await this['sapiV3PostAssetGetUserAsset']({});

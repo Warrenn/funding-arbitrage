@@ -1,4 +1,4 @@
-import ccxt, { ExchangePro } from 'ccxt';
+import ccxt, { ExchangePro, Transaction } from 'ccxt';
 import AWS from 'aws-sdk';
 import { ExchangeFactory, AdjustPositionDetails, FundingRates, CreateOrderDetails, FundingRateCalculation, LeverageTier, RoiTradePair, TradeState, FundingRatesChainFunction, TradePairReferenceData } from './types.js';
 export declare function getCredentials({ ssm, name, apiCredentialsKeyPrefix }: {
@@ -141,12 +141,12 @@ export declare function findWithdrawalById(params: {
     depositId?: string;
     depositTxId?: string;
 }>;
-export declare function hasDepositArrived({ exchange, currency, depositTxId, limit }: {
+export declare function findDepositByTxId({ exchange, currency, depositTxId, limit }: {
     exchange: ccxt.pro.Exchange;
     currency: string;
     depositTxId?: string;
     limit?: number;
-}): Promise<boolean>;
+}): Promise<Transaction | undefined>;
 export declare function withdrawFunds({ address, currency, timestamp, network, depositAmount, depositId, depositTxId, withdrawalExchange, depositExchange, saveState, retryLimit }: {
     address: string;
     currency: string;

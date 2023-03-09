@@ -65,10 +65,10 @@ if (apiCredentialsKeyPrefix.match(/\/dev\//)) fundingsRatePipeline.push(sandBoxF
 
 let centralExchangeKey = settings.centralExchange;
 let centralExchage = exchangeCache[centralExchangeKey];
-let onboardingHour = (new Date()).getHours();
+let onboardingHour = 1;//(new Date()).getUTCHours();
 let depositAmount = 20;
 
-let ignore: string[] = [];
+let ignore: string[] = ['binance', 'okx'];
 let keys = Object.keys(exchangeCache);
 
 
@@ -101,6 +101,10 @@ for (let i = 0; i < keys.length; i++) {
     });
 
     await exchange.transfer(currency, depositAmount, exchange.options.fundingAccount, exchange.options.tradingAccount);
+
+    address = settings.withdraw[key].address;
+    currency = settings.withdraw[key].currency;
+    network = settings.withdraw[key].network;
 
     await withdrawFunds({
         address,

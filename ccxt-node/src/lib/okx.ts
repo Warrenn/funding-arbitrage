@@ -1,5 +1,5 @@
 import { FetchOpenStopOrdersFunction, SetRiskLimitFunction } from "./types.js";
-import ccxt, { Order } from 'ccxt';
+import ccxt, { Order, Params, WithdrawalResponse } from 'ccxt';
 
 export class OkxExchange extends ccxt.pro.okex {
     async createOrder(symbol: string, type: Order['type'], side: Order['side'], amount: number, price?: number, params?: ccxt.Params) {
@@ -12,6 +12,11 @@ export class OkxExchange extends ccxt.pro.okex {
             params = { ...params, marginMode: 'isolated' };
         }
         return await super.createOrder(symbol, type, side, amount, price, params);
+    }
+
+    async withdraw(currency: string, amount: number, address: string, tag?: string, params?: Params): Promise<WithdrawalResponse> {
+        params = { ...params, pwd: this.password };
+        return await super.withdraw(currency, amount, address, tag, params);
     }
 
     async cancelAllOrders(...args: any): Promise<any> {
