@@ -37,7 +37,9 @@ export const exchangeFactory = {
             enableRateLimit: true,
             options: {
                 fetchOrderBookLimit: 5,
-                defaultMarginMode: 'isolated'
+                defaultMarginMode: 'isolated',
+                fundingAccount: 'spot',
+                tradingAccount: 'future'
             }
         });
         if (apiCredentialsKeyPrefix.match(/\/dev\//))
@@ -57,7 +59,9 @@ export const exchangeFactory = {
                 'fetchTimeOffsetBeforeAuth': true,
                 'recvWindow': 59999,
                 fetchOrderBookLimit: 5,
-                defaultMarginMode: 'isolated'
+                defaultMarginMode: 'isolated',
+                fundingAccount: 'funding',
+                tradingAccount: 'trading'
             },
             timeout: 99999
         });
@@ -74,7 +78,9 @@ export const exchangeFactory = {
                 'fetchTimeOffsetBeforeAuth': true,
                 'recvWindow': 59999,
                 fetchOrderBookLimit: 5,
-                defaultMarginMode: 'isolated'
+                defaultMarginMode: 'isolated',
+                fundingAccount: 'funding',
+                tradingAccount: 'unified'
             },
             apiKey: credentials.key,
             enableRateLimit: true
@@ -92,7 +98,9 @@ export const exchangeFactory = {
             enableRateLimit: true,
             options: {
                 fetchOrderBookLimit: 5,
-                defaultMarginMode: 'isolated'
+                defaultMarginMode: 'isolated',
+                fundingAccount: 'funding',
+                tradingAccount: 'swap'
             }
         });
         if (apiCredentialsKeyPrefix.match(/\/dev\//))
@@ -109,7 +117,9 @@ export const exchangeFactory = {
             options: {
                 fetchOrderBookLimit: 5,
                 defaultMarginMode: 'isolated',
-                defaultType: 'swap'
+                defaultType: 'swap',
+                fundingAccount: 'spot',
+                tradingAccount: 'swap'
             }
         });
         await ex.loadMarkets();
@@ -658,6 +668,96 @@ export async function adjustPositions({ longExchange, longSymbol, shortExchange,
     if (shortDiff > shortMinSize && shortPositionSize < targetSize) {
         console.log(`short position too small need to adjust by ${shortDiff}`);
         await createImmediateOrder({ exchange: shortExchange, side: 'sell', size: size, symbol: shortSymbol, reduceOnly: true });
+    }
+}
+export async function findWithdrawal({ exchange, currency, address, timestamp, depositId, limit = 10 }) {
+    let transactions = await exchange.fetchWithdrawals(currency, undefined, limit);
+    for (let i = 0; i < transactions.length; i++) {
+        let transaction = transactions[i];
+        if (depositId && transaction.id == depositId)
+            return {
+                depositId: transaction.id,
+                depositTxId: transaction.txid
+            };
+        if (timestamp && transaction.timestamp > timestamp && transaction.address == address)
+            return {
+                depositId: transaction.id,
+                depositTxId: transaction.txid
+            };
+    }
+    return { depositId, depositTxId: undefined };
+}
+export async function findWithdrawalByTime(params) {
+    return await findWithdrawal(params);
+}
+export async function findWithdrawalById(params) {
+    return await findWithdrawal(params);
+}
+export async function hasDepositArrived({ exchange, currency, depositTxId, limit = 10 }) {
+    let transactions = await exchange.fetchDeposits(currency, undefined, limit);
+    for (let i = 0; i < transactions.length; i++) {
+        let transaction = transactions[i];
+        if (transaction.txid == depositTxId)
+            return true;
+    }
+    return false;
+}
+export async function withdrawFunds({ address, currency, timestamp, network, depositAmount, depositId, depositTxId, withdrawalExchange, depositExchange, saveState, retryLimit = 10 }) {
+    var _a, _b;
+    if (!depositId) {
+        ({ depositId, depositTxId } = await findWithdrawalByTime({
+            address,
+            currency,
+            exchange: withdrawalExchange,
+            timestamp
+        }));
+    }
+    if (!depositTxId && !depositId) {
+        let fundingBalace = await withdrawalExchange.fetchBalance({ type: withdrawalExchange.options.fundingAccount });
+        let availableInFunding = ((_a = fundingBalace[currency]) === null || _a === void 0 ? void 0 : _a.free) || 0;
+        let tradingBalance = await withdrawalExchange.fetchBalance({ type: withdrawalExchange.options.tradingAccount });
+        let availableInTrading = ((_b = tradingBalance[currency]) === null || _b === void 0 ? void 0 : _b.free) || 0;
+        if (!depositAmount && availableInTrading) {
+            await withdrawalExchange.transfer(currency, availableInTrading, withdrawalExchange.options.tradingAccount, withdrawalExchange.options.fundingAccount);
+        }
+        if (depositAmount && availableInFunding < depositAmount) {
+            let transferAmount = depositAmount - availableInFunding;
+            if (availableInTrading < transferAmount)
+                throw `Not enough funds available ${currency} ${depositAmount} in ${withdrawalExchange.id}`;
+            await withdrawalExchange.transfer(currency, transferAmount, withdrawalExchange.options.tradingAccount, withdrawalExchange.options.fundingAccount);
+        }
+        if (!depositAmount)
+            depositAmount = availableInFunding + availableInTrading;
+        //todo:let transactionResult = await withdrawalExchange.withdraw(currency, depositAmount, address, undefined, { network });
+        //todo:depositId = transactionResult.id;
+        await saveState({ depositId, depositTxId });
+    }
+    let retryCount = 0;
+    while (!depositTxId && depositId) {
+        ({ depositId, depositTxId } = await findWithdrawalById({
+            address,
+            currency,
+            exchange: withdrawalExchange,
+            depositId
+        }));
+        if (depositTxId) {
+            await saveState({ depositId, depositTxId });
+            break;
+        }
+        retryCount++;
+        if (retryCount > retryLimit)
+            throw `${currency} withdrawal on ${withdrawalExchange.id} to address ${address} with id ${depositId} could not be found`;
+        await asyncSleep(250);
+    }
+    retryCount = 0;
+    while (true) {
+        let arrived = await hasDepositArrived({ exchange: depositExchange, currency, depositTxId });
+        if (arrived)
+            break;
+        retryCount++;
+        if (retryCount > retryLimit)
+            throw `${currency} deposit on ${depositExchange.id} with TxId ${depositTxId} could not be found`;
+        await asyncSleep(300000 /* 5 min: 1000 * 60 * 5 */);
     }
 }
 //# sourceMappingURL=global.js.map

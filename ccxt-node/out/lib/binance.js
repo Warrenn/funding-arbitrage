@@ -33,5 +33,19 @@ export class BinanceExchange extends ccxt.pro.binance {
         return super.fetchOpenOrders(symbol, since, limit, params);
     }
     ;
+    async fetchBalance(params) {
+        if ((params === null || params === void 0 ? void 0 : params.type) === this.options.fundingAccount) {
+            const response = await this['sapiV3PostAssetGetUserAsset']({});
+            return this.parseBalance(response, 'funding', '');
+        }
+        if ((params === null || params === void 0 ? void 0 : params.type) === this.options.tradingAccount) {
+            let defaultMarginMode = this.options.defaultMarginMode;
+            this.options.defaultMarginMode = '';
+            const response = await super.fetchBalance(params);
+            this.options.defaultMarginMode = defaultMarginMode;
+            return response;
+        }
+        return super.fetchBalance(params);
+    }
 }
 //# sourceMappingURL=binance.js.map

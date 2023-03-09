@@ -26,7 +26,8 @@ import {
     getCoinGlassData,
     sandBoxFundingRateLink,
     getSettings,
-    createOrder
+    createOrder,
+    withdrawFunds
 } from './lib/global.js';
 
 dotenv.config({ override: true });
@@ -64,94 +65,11 @@ if (apiCredentialsKeyPrefix.match(/\/dev\//)) fundingsRatePipeline.push(sandBoxF
 
 let centralExchangeKey = settings.centralExchange;
 let centralExchage = exchangeCache[centralExchangeKey];
-let depositId: string | undefined = undefined;
-let depositTxId: string | undefined = undefined;
-let amount: number | undefined;
-let currency = 'USDT';
-let onboardingHour = 6;
+let onboardingHour = (new Date()).getHours();
 let depositAmount = 20;
-let retryLimit = 100;
 
-let ignore = ['binance'];
+let ignore: string[] = [];
 let keys = Object.keys(exchangeCache);
-
-async function findWithdrawal({
-    exchange,
-    currency,
-    address,
-    timestamp,
-    depositId,
-    limit = 10
-}: {
-    exchange: ccxt.pro.Exchange,
-    currency: string,
-    address: string,
-    timestamp?: number,
-    depositId?: string,
-    limit?: number
-}): Promise<{
-    depositId?: string,
-    depositTxId?: string
-}> {
-    let transactions = await exchange.fetchWithdrawals(currency, undefined, limit);
-    for (let i = 0; i < transactions.length; i++) {
-        let transaction = transactions[i];
-        if (depositId && transaction.id == depositId) return {
-            depositId: transaction.id,
-            depositTxId: transaction.txid
-        };
-        if (timestamp && transaction.timestamp > timestamp && transaction.address == address) return {
-            depositId: transaction.id,
-            depositTxId: transaction.txid
-        };
-    }
-
-    return { depositId, depositTxId: undefined };
-}
-
-async function findWithdrawalByTime(params: {
-    exchange: ccxt.pro.Exchange,
-    currency: string,
-    address: string,
-    timestamp: number
-}): Promise<{
-    depositId?: string,
-    depositTxId?: string
-}> {
-    return await findWithdrawal(params);
-}
-
-async function findWithdrawalById(params: {
-    exchange: ccxt.pro.Exchange,
-    currency: string,
-    address: string,
-    depositId: string
-}): Promise<{
-    depositId?: string,
-    depositTxId?: string
-}> {
-    return await findWithdrawal(params);
-}
-
-async function hasDepositArrived({
-    exchange,
-    currency,
-    depositTxId,
-    limit = 10
-}: {
-    exchange: ccxt.pro.Exchange,
-    currency: string,
-    depositTxId?: string,
-    limit?: number
-}): Promise<boolean> {
-    let transactions = await exchange.fetchDeposits(currency, undefined, limit);
-    for (let i = 0; i < transactions.length; i++) {
-        let transaction = transactions[i];
-        if (transaction.txid == depositTxId) return true;
-    }
-
-    return false
-}
 
 
 for (let i = 0; i < keys.length; i++) {
@@ -162,7 +80,6 @@ for (let i = 0; i < keys.length; i++) {
     let address = settings.deposit[key].address;
     let currency = settings.deposit[key].currency;
     let network = settings.deposit[key].network;
-    let exchangeState = tradingState.long;
 
     //perform the deposit into accounts
     let onboardingTime = new Date();
@@ -183,138 +100,19 @@ for (let i = 0; i < keys.length; i++) {
         withdrawalExchange: centralExchage
     });
 
-
-    //transfer into tradingAccount
-    let balance = await exchange.fetchBalance();
-    //if (balance.free[currency] > 0) return;
-    let fundingAvailable = await exchange.fetchFundingAmount(currency);
-    if (fundingAvailable == 0) throw "funds not available";
     await exchange.transfer(currency, depositAmount, exchange.options.fundingAccount, exchange.options.tradingAccount);
 
-    //closing and transfer to centralAccount
-
-    //transfer into tradingAccount
-    balance = await exchange.fetchBalance();
-    //if (balance.free[currency] > 0)
-    await exchange.transferAllFromTradingToFunding(currency);
-    fundingAvailable = await exchange.fetchFundingAmount(currency);
-    if (fundingAvailable == 0) throw "funds not available";
-
-
-
+    await withdrawFunds({
+        address,
+        currency,
+        network,
+        timestamp,
+        saveState: async (a) => { },
+        depositExchange: centralExchage,
+        withdrawalExchange: exchange
+    });
 }
 
-
-
-
-
-//if no DepositId
-//find depositId and transactionId
-
-//check if funds in futures account
-// if not check if funds in landing account
-//  if there tranfer to futures account and continue
-//  if not there
-//check on the destination exchange
-// look for deposits that have the expected memo
-// if arrived continue if not
-//  check on the holding exchange
-//    look for withdrawls that have the expected memo
-//    if not make the withdrawal with the expected memo
-//    keep waiting until deposit with memo arrived on destination exchange
-//    once arrived tranfer to futures account
-
-//if no id provided
-//check for deposits made to destination if after onboardinghour use that transactionId
-
-
-async function withdrawFunds({
-    address,
-    currency,
-    timestamp,
-    network,
-    depositAmount,
-    depositId,
-    depositTxId,
-    withdrawalExchange,
-    depositExchange,
-    saveState,
-    retryLimit = 100
-}: {
-    address: string,
-    currency: string,
-    timestamp: number,
-    network: string,
-    depositAmount?: number,
-    depositId?: string,
-    depositTxId?: string,
-    withdrawalExchange: ccxt.pro.Exchange,
-    depositExchange: ccxt.pro.Exchange,
-    saveState: ({ depositId, depositTxId }: { depositId?: string, depositTxId?: string }) => Promise<void>,
-    retryLimit?: number
-}) {
-    if (!depositId) {
-        ({ depositId, depositTxId } = await findWithdrawalByTime({
-            address,
-            currency,
-            exchange: withdrawalExchange,
-            timestamp
-        }));
-    }
-
-    if (!depositTxId && !depositId) {
-        let fundingBalace = await withdrawalExchange.fetchBalance({ type: withdrawalExchange.options.fundingAccount });
-        let availableInFunding = fundingBalace[currency]?.free || 0;
-
-        let tradingBalance = await withdrawalExchange.fetchBalance({ type: withdrawalExchange.options.tradingAccount });
-        let availableInTrading = tradingBalance[currency]?.free || 0;
-
-        if (!depositAmount && availableInTrading) {
-            await withdrawalExchange.transfer(currency, availableInTrading, withdrawalExchange.options.tradingAccount, withdrawalExchange.options.fundingAccount);
-        }
-
-        if (depositAmount && availableInFunding < depositAmount) {
-            let transferAmount = depositAmount - availableInFunding;
-            if (availableInTrading < transferAmount) throw `Not enough funds available ${currency} ${depositAmount} in ${withdrawalExchange.id}`;
-            await withdrawalExchange.transfer(currency, transferAmount, withdrawalExchange.options.tradingAccount, withdrawalExchange.options.fundingAccount);
-        }
-
-        if (!depositAmount) depositAmount = availableInFunding + availableInTrading;
-
-        let transactionResult = await withdrawalExchange.withdraw(currency, depositAmount, address, undefined, { network });
-        depositId = transactionResult.id;
-        await saveState({ depositId, depositTxId });
-    }
-
-    let retryCount = 0;
-    while (!depositTxId && depositId) {
-        ({ depositId, depositTxId } = await findWithdrawalById({
-            address,
-            currency,
-            exchange: withdrawalExchange,
-            depositId
-        }));
-        if (depositTxId) {
-            await saveState({ depositId, depositTxId });
-            break;
-        }
-        retryCount++;
-        if (retryCount > retryLimit)
-            throw `${currency} withdrawal on ${withdrawalExchange.id} to address ${address} with id ${depositId} could not be found`;
-        await asyncSleep(250);
-    }
-
-    retryCount = 0;
-    while (true) {
-        let arrived = await hasDepositArrived({ exchange: depositExchange, currency, depositTxId });
-        if (arrived)
-            break;
-        retryCount++;
-        if (retryCount > retryLimit)
-            throw `${currency} deposit on ${exchange.id} with TxId ${depositTxId} could not be found`;
-        await asyncSleep(250);
-    }
-}
 
 //privateGetAssetV3PrivateTransferInterTransferListQuery
 //'asset/v3/private/transfer/inter-transfer/list/query'
@@ -324,7 +122,7 @@ async function withdrawFunds({
 //okx:
 //let response = await exchange.fetchBalance({ instType: 'funding' });
 //bybit:
-//let response = await exchange.privateGetAssetV3PrivateTransferAccountCoinBalanceQuery({ accountType: "FUND", coin: "USDT" });
+//
 
 
 

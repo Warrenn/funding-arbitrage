@@ -1,5 +1,5 @@
 import { FetchOpenStopOrdersFunction, SetRiskLimitFunction } from "./types.js";
-import ccxt from 'ccxt';
+import ccxt, { Balances, Params } from 'ccxt';
 
 export class GateExchange extends ccxt.pro.gateio {
     describe() {
@@ -37,6 +37,18 @@ export class GateExchange extends ccxt.pro.gateio {
         }
 
         return await super.fetchOrder(id, symbol, { ...params, stop: true });
+    }
+
+    async fetchBalance(params?: Params): Promise<Balances> {
+        if (params?.type === this.options.fundingAccount ||
+            params?.type === this.options.tradingAccount) {
+            let defaultMarginMode = this.options.defaultMarginMode;
+            this.options.defaultMarginMode = '';
+            const response = await super.fetchBalance(params);
+            this.options.defaultMarginMode = defaultMarginMode;
+            return response;
+        }
+        return super.fetchBalance(params);
     }
 
     public setRiskLimit: SetRiskLimitFunction =

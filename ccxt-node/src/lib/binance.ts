@@ -1,5 +1,5 @@
 import { FetchOpenStopOrdersFunction, SetRiskLimitFunction } from "./types.js";
-import ccxt, { Order } from 'ccxt';
+import ccxt, { Balances, Order, Params } from 'ccxt';
 
 
 export class BinanceExchange extends ccxt.pro.binance {
@@ -27,6 +27,21 @@ export class BinanceExchange extends ccxt.pro.binance {
         }
         return super.fetchOpenOrders(symbol, since, limit, params);
     };
+
+    async fetchBalance(params?: Params): Promise<Balances> {
+        if (params?.type === this.options.fundingAccount) {
+            const response = await this['sapiV3PostAssetGetUserAsset']({});
+            return this.parseBalance(response, 'funding', '');
+        }
+        if (params?.type === this.options.tradingAccount) {
+            let defaultMarginMode = this.options.defaultMarginMode;
+            this.options.defaultMarginMode = '';
+            const response = await super.fetchBalance(params);
+            this.options.defaultMarginMode = defaultMarginMode;
+            return response;
+        }
+        return super.fetchBalance(params);
+    }
 
     public fetchOpenStopOrders: FetchOpenStopOrdersFunction =
         async (symbol: string, since?: number, limit?: number, params?: ccxt.Params): Promise<ccxt.Order[]> => {

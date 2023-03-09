@@ -21,6 +21,17 @@ export class BybitExchange extends ccxt.pro.bybit {
             return response;
         };
     }
+    describe() {
+        return this.deepExtend(super.describe(), {
+            'api': {
+                'private': {
+                    'get': {
+                        'asset/v3/private/transfer/account-coins/balance/query': 0.84
+                    }
+                }
+            }
+        });
+    }
     handleErrors(httpCode, reason, url, method, headers, body, response, requestHeaders, requestBody) {
         if (!response)
             return;
@@ -29,6 +40,31 @@ export class BybitExchange extends ccxt.pro.bybit {
         if (errorCode && retMsg && (errorCode in ignoreErrorCodes) && (retMsg in ignoreErrorCodes[errorCode]))
             return ignoreErrorCodes[errorCode][retMsg];
         return super.handleErrors(httpCode, reason, url, method, headers, body, response, requestHeaders, requestBody);
+    }
+    parseFundingBalance(response) {
+        const result = {
+            'info': response,
+        };
+        const responseResult = this.safeValue(response, 'result', {});
+        const currencyList = this.safeValueN(responseResult, ['balance']);
+        for (let i = 0; i < currencyList.length; i++) {
+            const entry = currencyList[i];
+            const account = this.account();
+            account['total'] = this.safeString2(entry, 'total', 'walletBalance');
+            account['free'] = this.safeStringN(entry, ['free', 'transferBalance', 'availableBalance']);
+            account['used'] = this.safeString(entry, 'locked');
+            const currencyId = this.safeStringN(entry, ['coin']);
+            const code = this.safeCurrencyCode(currencyId);
+            result[code] = account;
+        }
+        return this.safeBalance(result);
+    }
+    async fetchBalance(params) {
+        if ((params === null || params === void 0 ? void 0 : params.type) === this.options.fundingAccount) {
+            let response = await this.privateGetAssetV3PrivateTransferAccountCoinsBalanceQuery({ accountType: "FUND" });
+            return this.parseFundingBalance(response);
+        }
+        return super.fetchBalance(params);
     }
 }
 //# sourceMappingURL=bybit.js.map

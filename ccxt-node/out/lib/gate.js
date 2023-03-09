@@ -48,6 +48,17 @@ export class GateExchange extends ccxt.pro.gateio {
         }
         return await super.fetchOrder(id, symbol, Object.assign(Object.assign({}, params), { stop: true }));
     }
+    async fetchBalance(params) {
+        if ((params === null || params === void 0 ? void 0 : params.type) === this.options.fundingAccount ||
+            (params === null || params === void 0 ? void 0 : params.type) === this.options.tradingAccount) {
+            let defaultMarginMode = this.options.defaultMarginMode;
+            this.options.defaultMarginMode = '';
+            const response = await super.fetchBalance(params);
+            this.options.defaultMarginMode = defaultMarginMode;
+            return response;
+        }
+        return super.fetchBalance(params);
+    }
     async fetchPosition(symbol, params) {
         let [position] = await super.fetchPositions([symbol], params);
         return position;

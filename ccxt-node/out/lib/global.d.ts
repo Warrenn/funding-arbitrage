@@ -112,3 +112,54 @@ export declare function adjustUntilTargetMet({ target, getPositionSize, createOr
     retryLimit?: number;
 }): Promise<void>;
 export declare function adjustPositions({ longExchange, longSymbol, shortExchange, shortSymbol, makerSide, reduceOnly, idealOrderValue, idealBatchSize, targetSize, shortSide, longSide, trailPct }: AdjustPositionDetails): Promise<void>;
+export declare function findWithdrawal({ exchange, currency, address, timestamp, depositId, limit }: {
+    exchange: ccxt.pro.Exchange;
+    currency: string;
+    address: string;
+    timestamp?: number;
+    depositId?: string;
+    limit?: number;
+}): Promise<{
+    depositId?: string;
+    depositTxId?: string;
+}>;
+export declare function findWithdrawalByTime(params: {
+    exchange: ccxt.pro.Exchange;
+    currency: string;
+    address: string;
+    timestamp: number;
+}): Promise<{
+    depositId?: string;
+    depositTxId?: string;
+}>;
+export declare function findWithdrawalById(params: {
+    exchange: ccxt.pro.Exchange;
+    currency: string;
+    address: string;
+    depositId: string;
+}): Promise<{
+    depositId?: string;
+    depositTxId?: string;
+}>;
+export declare function hasDepositArrived({ exchange, currency, depositTxId, limit }: {
+    exchange: ccxt.pro.Exchange;
+    currency: string;
+    depositTxId?: string;
+    limit?: number;
+}): Promise<boolean>;
+export declare function withdrawFunds({ address, currency, timestamp, network, depositAmount, depositId, depositTxId, withdrawalExchange, depositExchange, saveState, retryLimit }: {
+    address: string;
+    currency: string;
+    timestamp: number;
+    network: string;
+    depositAmount?: number;
+    depositId?: string;
+    depositTxId?: string;
+    withdrawalExchange: ccxt.pro.Exchange;
+    depositExchange: ccxt.pro.Exchange;
+    saveState: ({ depositId, depositTxId }: {
+        depositId?: string;
+        depositTxId?: string;
+    }) => Promise<void>;
+    retryLimit?: number;
+}): Promise<void>;
