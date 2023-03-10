@@ -19,6 +19,9 @@ export class BinanceExchange extends ccxt.pro.binance {
     async createOrder(symbol: string, type: Order['type'], side: Order['side'], amount: number, price?: number, params?: ccxt.Params): Promise<Order> {
         let market = this.market(symbol);
         if (market.margin && !market.swap) params = { ...params, marginMode: 'isolated' };
+        if (params?.type == 'market') {
+            delete params.timeInForce;
+        }
         return super.createOrder(symbol, type, side, amount, price, params);
     }
 

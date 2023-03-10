@@ -103,7 +103,6 @@ export const exchangeFactory: { [key: string]: ExchangeFactory } = {
                 fundingAccount: 'funding',
                 tradingAccount: 'unified',
                 leaveBehind: 1
-
             },
             apiKey: credentials.key,
             enableRateLimit: true
@@ -853,8 +852,8 @@ export async function adjustPositions({
                 let order = orders[i];
 
                 if (!order?.id || !order?.price) continue;
-                if ((order.price > bestPrice && makerOrderSide == 'sell') ||
-                    (order.price < bestPrice && makerOrderSide == 'buy')) continue;
+                if ((order.price <= bestPrice && makerOrderSide == 'sell') ||
+                    (order.price >= bestPrice && makerOrderSide == 'buy')) continue;
 
                 console.log(`adjust:placeOrders canceling order for trailing ${order?.id}`);
                 await makerExchange.cancelOrder(order.id, makerSymbol);

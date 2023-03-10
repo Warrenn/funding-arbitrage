@@ -21,7 +21,6 @@ export declare type TransferDetails = {
     };
 };
 export declare type Settings = {
-    trailPct: number;
     investmentMargin: number;
     initialMargin: number;
     tpSlLimit: number;
@@ -72,7 +71,6 @@ export declare type AdjustPositionDetails = {
     idealBatchSize?: number;
     shortSide?: Order["side"];
     longSide?: Order["side"];
-    trailPct?: number;
     targetSize?: number;
     reduceOnly?: boolean;
 };

@@ -60,12 +60,36 @@ if (apiCredentialsKeyPrefix.match(/\/dev\//)) fundingsRatePipeline.push(sandBoxF
 let centralExchangeKey = settings.centralExchange;
 let centralExchage = exchangeCache[centralExchangeKey];
 
+//HACK:Needed for testing must remove
+// tradingState.fundingHour = 4;
+// tradingState.state = 'open';
+// tradingState.targetSize = 1.2;
+// tradingState.leverage = 10;
+// tradingState.makerSide = 'long';
+// tradingState.long = {
+//     exchange: 'bybit',
+//     maxLeverage: 100,
+//     riskIndex: 200,
+//     symbol: 'BTC/USDT:USDT'
+// }
+// tradingState.short = {
+//     exchange: 'binance',
+//     maxLeverage: 100,
+//     riskIndex: 1,
+//     symbol: 'BTC/USDT:USDT'
+// }
+// settings.idealOrderValue = 1000;
+
+
 await main();
 
 async function main() {
     while (true) {
         try {
             let currentHour = (new Date()).getUTCHours();
+            //HACK:Setting currentHour only for testing must remove
+            // currentHour = tradingState.fundingHour - 1;
+
             let onboardingTime = new Date();
             onboardingTime.setUTCMilliseconds(0);
             onboardingTime.setUTCSeconds(0);
@@ -98,6 +122,8 @@ async function main() {
                 await longExchange.cancelAllOrders(tradingState.long.symbol, { stop: true });
                 await shortExchange.cancelAllOrders(tradingState.short.symbol, { stop: true });
 
+                //HACK:only commented out because of testing
+                
                 let longDetails = settings.withdraw[tradingState.long.exchange];
                 let shortDetails = settings.withdraw[tradingState.short.exchange];
 
@@ -143,6 +169,8 @@ async function main() {
                 let centralCurrency = settings.withdraw[centralExchangeKey].currency;
                 let centralBalance = await centralExchage.fetchBalance({ type: centralExchage.options.fundingAccount });
                 let investmentFundsAvailable = (centralBalance[centralCurrency]?.free || 0);
+                //HACK:only for testing
+                investmentFundsAvailable = 500;
 
                 let investmentAmount = investmentFundsAvailable * settings.investmentMargin;
                 let investment = investmentAmount * settings.initialMargin;
@@ -202,6 +230,7 @@ async function main() {
                 let longExchange = exchangeCache[tradingState.long.exchange];
                 let shortExchange = exchangeCache[tradingState.short.exchange];
 
+                //HACK:Only commented out because of testing
                 let longDetails = settings.deposit[tradingState.long.exchange];
                 let shortDetails = settings.deposit[tradingState.short.exchange];
 

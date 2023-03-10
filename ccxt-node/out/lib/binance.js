@@ -23,6 +23,9 @@ export class BinanceExchange extends ccxt.pro.binance {
         let market = this.market(symbol);
         if (market.margin && !market.swap)
             params = Object.assign(Object.assign({}, params), { marginMode: 'isolated' });
+        if ((params === null || params === void 0 ? void 0 : params.type) == 'market') {
+            delete params.timeInForce;
+        }
         return super.createOrder(symbol, type, side, amount, price, params);
     }
     async fetchOpenOrders(symbol, since, limit, params) {

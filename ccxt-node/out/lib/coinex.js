@@ -12,6 +12,7 @@ export class CoinexExchange extends ccxt.pro.coinex {
     market(symbol) {
         var _a, _b;
         let market = super.market(symbol);
+        //TODO:Must figure out a better way to get the max order limit
         if (!((_a = market.limits.amount) === null || _a === void 0 ? void 0 : _a.max))
             market.limits.amount = { max: 9999, min: (_b = market.limits.amount) === null || _b === void 0 ? void 0 : _b.min };
         return market;

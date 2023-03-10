@@ -535,7 +535,7 @@ export async function adjustUntilTargetMet({ target, getPositionSize, createOrde
         await createOrder(orderSize);
     }
 }
-export async function adjustPositions({ longExchange, longSymbol, shortExchange, shortSymbol, makerSide, reduceOnly, idealOrderValue, idealBatchSize = 1, targetSize = 0, shortSide = "sell", longSide = "buy", trailPct = 0.0001 }) {
+export async function adjustPositions({ longExchange, longSymbol, shortExchange, shortSymbol, makerSide, reduceOnly, idealOrderValue, idealBatchSize = 1, targetSize = 0, shortSide = "sell", longSide = "buy" }) {
     let { makerOrderSide, makerExchange, makerSymbol, takerOrderSide, takerExchange, takerSymbol } = (makerSide == 'long') ?
         {
             makerOrderSide: longSide,
@@ -582,19 +582,18 @@ export async function adjustPositions({ longExchange, longSymbol, shortExchange,
         }
     };
     let placeOrders = async () => {
-        var _a;
         while (true) {
-            let currentPrice = (_a = (await makerExchange.fetchOHLCV(makerSymbol, undefined, undefined, 1))[0]) === null || _a === void 0 ? void 0 : _a[4];
-            let makerIdealSize = idealOrderValue / (currentPrice || 1);
-            let minTrailPrice = currentPrice * (1 - trailPct);
-            let maxTrailPrice = currentPrice * (1 + trailPct);
+            let ob = await makerExchange.fetchOrderBook(makerSymbol, makerExchange.options.fetchOrderBookLimit);
+            let bestPrice = (makerOrderSide == 'buy') ? ob.bids[0][0] : ob.asks[0][0];
+            let makerIdealSize = idealOrderValue / (bestPrice || 1);
             let orders = await makerExchange.fetchOpenOrders(makerSymbol);
             orders = orders.filter((o) => o.side == makerOrderSide && !o.triggerPrice);
-            for (let i = 0; i < orders.length && currentPrice; i++) {
+            for (let i = 0; i < orders.length; i++) {
                 let order = orders[i];
                 if (!(order === null || order === void 0 ? void 0 : order.id) || !(order === null || order === void 0 ? void 0 : order.price))
                     continue;
-                if (order.price > minTrailPrice && order.price < maxTrailPrice)
+                if ((order.price <= bestPrice && makerOrderSide == 'sell') ||
+                    (order.price >= bestPrice && makerOrderSide == 'buy'))
                     continue;
                 console.log(`adjust:placeOrders canceling order for trailing ${order === null || order === void 0 ? void 0 : order.id}`);
                 await makerExchange.cancelOrder(order.id, makerSymbol);
@@ -612,7 +611,7 @@ export async function adjustPositions({ longExchange, longSymbol, shortExchange,
             if (size < 0) {
                 console.log(`adjust:placeOrders too many orders need to cancel size: ${size}`);
                 orders = (await makerExchange.fetchOpenOrders(makerSymbol)).filter((o) => o.side == makerOrderSide && !o.triggerPrice);
-                for (let i = 0; i < orders.length && currentPrice; i++) {
+                for (let i = 0; i < orders.length; i++) {
                     let order = orders[i];
                     if (!(order === null || order === void 0 ? void 0 : order.id) || !(order === null || order === void 0 ? void 0 : order.price))
                         continue;
@@ -637,61 +636,58 @@ export async function adjustPositions({ longExchange, longSymbol, shortExchange,
     await Promise.all([balanceHedge(), placeOrders()]);
     let orders = await makerExchange.fetchOpenOrders(makerSymbol);
     orders = orders.filter((o) => o.side == makerOrderSide && !o.triggerPrice);
+    if (orders.length > 0)
+        console.log(`Too many orders cancelling ${orders.length} orders`);
     for (let i = 0; i < orders.length; i++) {
         let order = orders[i];
         await makerExchange.cancelOrder(order.id, makerSymbol);
     }
-    let longMinSize = makerSide == 'long' ? makerMinSize : takerMinSize;
-    let longPositionSize = Math.abs(await getPositionSize({ exchange: longExchange, symbol: longSymbol }));
-    let longDiff = Math.abs(targetSize - longPositionSize);
+    await correctPosition({
+        exchange: makerExchange,
+        symbol: makerSymbol,
+        contractSize: makerContractSize,
+        maxSize: makerMaxSize,
+        minSize: makerMinSize,
+        targetSize,
+        decreaseOrderSide: (makerSide == 'long') ? 'sell' : 'buy',
+        increaseOrderSide: (makerSide == 'long') ? 'buy' : 'sell'
+    });
+    await correctPosition({
+        exchange: takerExchange,
+        symbol: takerSymbol,
+        contractSize: takerContractSize,
+        maxSize: takerMaxSize,
+        minSize: takerMinSize,
+        targetSize,
+        decreaseOrderSide: (makerSide == 'short') ? 'sell' : 'buy',
+        increaseOrderSide: (makerSide == 'short') ? 'buy' : 'sell'
+    });
+}
+async function correctPosition({ exchange, symbol, targetSize, contractSize, increaseOrderSide, decreaseOrderSide, maxSize, minSize }) {
+    let positionSize = Math.abs(await getPositionSize({ exchange, symbol }));
+    let diff = Math.abs(targetSize - positionSize);
+    if (diff < minSize)
+        return;
     let size = calculateOrderSize({
-        contractSize: makerSide == 'long' ? makerContractSize : takerContractSize,
-        idealSize: makerSide == 'long' ? makerMaxSize : takerMaxSize,
-        maxSize: makerSide == 'long' ? makerMaxSize : takerMaxSize,
-        orderSize: longDiff
+        contractSize: contractSize,
+        idealSize: maxSize,
+        maxSize: maxSize,
+        orderSize: diff
     });
-    if (longDiff > longMinSize && longPositionSize > targetSize) {
-        console.log(`long position too large need to adjust by ${longDiff}`);
-        await createImmediateOrder({ exchange: longExchange, side: 'sell', size: size, symbol: longSymbol, reduceOnly: true });
-    }
-    if (longDiff > longMinSize && longPositionSize < targetSize) {
-        console.log(`long position too small need to adjust by ${longDiff}`);
-        await createImmediateOrder({ exchange: longExchange, side: 'buy', size: size, symbol: longSymbol, reduceOnly: true });
-    }
-    let shortMinSize = makerSide == 'short' ? makerMinSize : takerMinSize;
-    let shortPositionSize = Math.abs(await getPositionSize({ exchange: shortExchange, symbol: shortSymbol }));
-    let shortDiff = Math.abs(targetSize - shortPositionSize);
-    size = calculateOrderSize({
-        contractSize: makerSide == 'short' ? makerContractSize : takerContractSize,
-        idealSize: makerSide == 'short' ? makerMaxSize : takerMaxSize,
-        maxSize: makerSide == 'short' ? makerMaxSize : takerMaxSize,
-        orderSize: shortDiff
-    });
-    if (shortDiff > shortMinSize && shortPositionSize > targetSize) {
-        console.log(`short position too large need to adjust by ${shortDiff}`);
-        await createImmediateOrder({ exchange: shortExchange, side: 'buy', size: size, symbol: shortSymbol, reduceOnly: true });
-    }
-    if (shortDiff > shortMinSize && shortPositionSize < targetSize) {
-        console.log(`short position too small need to adjust by ${shortDiff}`);
-        await createImmediateOrder({ exchange: shortExchange, side: 'sell', size: size, symbol: shortSymbol, reduceOnly: true });
-    }
+    let side = positionSize > targetSize ? increaseOrderSide : decreaseOrderSide;
+    console.log(`correctPosition:correcting position for ${symbol} in ${exchange.id} from ${positionSize} to ${targetSize} by doing a ${side}`);
+    await createImmediateOrder({ exchange, side, size, symbol });
 }
 export async function findWithdrawal({ exchange, currency, address, timestamp, depositId, limit = 10 }) {
     let transactions = await exchange.fetchWithdrawals(currency, undefined, limit);
     for (let i = 0; i < transactions.length; i++) {
         let transaction = transactions[i];
         if (depositId && transaction.id == depositId)
-            return {
-                depositId: transaction.id,
-                depositTxId: transaction.txid
-            };
+            return transaction;
         if (timestamp && transaction.timestamp >= timestamp && transaction.address == address)
-            return {
-                depositId: transaction.id,
-                depositTxId: transaction.txid
-            };
+            return transaction;
     }
-    return { depositId, depositTxId: undefined };
+    return undefined;
 }
 export async function findWithdrawalByTime(params) {
     return await findWithdrawal(params);
@@ -710,13 +706,21 @@ export async function findDepositByTxId({ exchange, currency, depositTxId, limit
 }
 export async function withdrawFunds({ address, currency, timestamp, network, depositAmount, depositId, depositTxId, withdrawalExchange, depositExchange, saveState, retryLimit = 360 }) {
     var _a, _b;
+    if (withdrawalExchange.id == depositExchange.id)
+        return;
     if (!depositId) {
-        ({ depositId, depositTxId } = await findWithdrawalByTime({
+        let transaction = await findWithdrawalByTime({
             address,
             currency,
             exchange: withdrawalExchange,
             timestamp
-        }));
+        });
+        if (transaction) {
+            ({
+                id: depositId,
+                txid: depositTxId
+            } = transaction);
+        }
     }
     if (!depositTxId && !depositId) {
         let fundingBalace = await withdrawalExchange.fetchBalance({ type: withdrawalExchange.options.fundingAccount });
@@ -749,20 +753,27 @@ export async function withdrawFunds({ address, currency, timestamp, network, dep
     }
     let retryCount = 0;
     while (!depositTxId && depositId) {
-        ({ depositId, depositTxId } = await findWithdrawalById({
+        let transaction = await findWithdrawalById({
             address,
             currency,
             exchange: withdrawalExchange,
             depositId
-        }));
+        });
+        if (transaction) {
+            ({
+                id: depositId,
+                txid: depositTxId
+            } = transaction);
+        }
         if (depositTxId) {
             await saveState({ depositId, depositTxId });
             break;
         }
-        retryCount++;
+        if (!transaction)
+            retryCount++;
         if (retryCount > retryLimit)
             throw `${currency} withdrawal on ${withdrawalExchange.id} to address ${address} with id ${depositId} could not be found`;
-        await asyncSleep(1000);
+        await asyncSleep(10000);
     }
     retryCount = 0;
     while (true) {
@@ -773,7 +784,7 @@ export async function withdrawFunds({ address, currency, timestamp, network, dep
             retryCount++;
         if (retryCount > retryLimit)
             throw `${currency} deposit on ${depositExchange.id} with TxId ${depositTxId} could not be found`;
-        await asyncSleep(5000);
+        await asyncSleep(10000);
     }
 }
 //# sourceMappingURL=global.js.map
