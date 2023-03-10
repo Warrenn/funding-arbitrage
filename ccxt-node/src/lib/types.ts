@@ -23,7 +23,6 @@ export type TransferDetails = {
 }
 
 export type Settings = {
-    trailPct: number,
     investmentMargin: number,
     initialMargin: number,
     tpSlLimit: number,
@@ -76,8 +75,7 @@ export type AdjustPositionDetails = {
     idealOrderValue: number,
     idealBatchSize?: number,
     shortSide?: Order["side"],
-    longSide?: Order["side"],
-    trailPct?: number,
+    longSide?: Order["side"]
     targetSize?: number,
     reduceOnly?: boolean
 }

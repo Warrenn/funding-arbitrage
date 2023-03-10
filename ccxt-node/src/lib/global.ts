@@ -773,8 +773,7 @@ export async function adjustPositions({
     idealBatchSize = 1,
     targetSize = 0,
     shortSide = "sell",
-    longSide = "buy",
-    trailPct = 0.0001
+    longSide = "buy"
 }: AdjustPositionDetails) {
     let {
         makerOrderSide,
@@ -1106,7 +1105,6 @@ export async function withdrawFunds({
 
     let retryCount = 0;
     while (!depositTxId && depositId) {
-        await asyncSleep(10000);
         let transaction = await findWithdrawalById({
             address,
             currency,
@@ -1127,11 +1125,11 @@ export async function withdrawFunds({
             retryCount++;
         if (retryCount > retryLimit)
             throw `${currency} withdrawal on ${withdrawalExchange.id} to address ${address} with id ${depositId} could not be found`;
+        await asyncSleep(10000);
     }
 
     retryCount = 0;
     while (true) {
-        await asyncSleep(10000);
         let transaction = await findDepositByTxId({ exchange: depositExchange, currency, depositTxId });
         if (transaction?.status == 'ok')
             break;
@@ -1139,6 +1137,6 @@ export async function withdrawFunds({
             retryCount++;
         if (retryCount > retryLimit)
             throw `${currency} deposit on ${depositExchange.id} with TxId ${depositTxId} could not be found`;
-
+        await asyncSleep(10000);
     }
 }

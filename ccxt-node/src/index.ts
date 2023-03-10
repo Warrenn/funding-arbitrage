@@ -26,7 +26,6 @@ import {
     getCoinGlassData,
     sandBoxFundingRateLink,
     getSettings,
-    createOrder,
     withdrawFunds
 } from './lib/global.js';
 
@@ -39,9 +38,6 @@ const
     region = `${process.env.CCXT_NODE_REGION}`,
     refDataFile = `${process.env.REF_DATA_FILE}`,
     settingsPrefix = `${process.env.SETTINGS_KEY_PREFIX}`;
-
-//HACK:get this from the actual funds in trading account
-let investmentFundsAvailable: number = 17000;
 
 let ssm = new AWS.SSM({ region });
 
@@ -61,88 +57,27 @@ let coinGlassLink = await getCoinGlassData({ ssm, coinglassSecretKey });
 fundingsRatePipeline.push(coinGlassLink);
 if (apiCredentialsKeyPrefix.match(/\/dev\//)) fundingsRatePipeline.push(sandBoxFundingRateLink);
 
-//HACK:remove dev work here
 let centralExchangeKey = settings.centralExchange;
 let centralExchage = exchangeCache[centralExchangeKey];
-let onboardingHour = (new Date()).getUTCHours();
-let depositAmount = 20;
 
-let ignore: string[] = ['binance', 'okx', 'bybit', 'gate', 'coinex'];
-let keys = Object.keys(exchangeCache);
-
-
-//for (let i = 0; i < keys.length; i++) {
-    let key = 'gate';//keys[i];
-    //if (ignore.indexOf(key) > -1) continue;
-
-    let exchange = exchangeCache[key];
-    let address = settings.deposit[key].address;
-    let currency = settings.deposit[key].currency;
-    let network = settings.deposit[key].network;
-
-    //perform the deposit into accounts
-    let onboardingTime = new Date();
-    onboardingTime.setUTCMilliseconds(0);
-    onboardingTime.setUTCSeconds(0);
-    onboardingTime.setUTCMinutes(0);
-    onboardingTime.setUTCHours(onboardingHour);
-    let timestamp = onboardingTime.getTime();
-
-    // await withdrawFunds({
-    //     address,
-    //     currency,
-    //     depositAmount,
-    //     network,
-    //     timestamp,
-    //     saveState: async (a) => { },
-    //     depositExchange: exchange,
-    //     withdrawalExchange: centralExchage
-    // });
-
-    // await exchange.transfer(currency, depositAmount, exchange.options.fundingAccount, exchange.options.tradingAccount);
-
-    address = settings.withdraw[key].address;
-    currency = settings.withdraw[key].currency;
-    network = settings.withdraw[key].network;
-
-    await withdrawFunds({
-        address,
-        currency,
-        network,
-        timestamp,
-        saveState: async (a) => { },
-        depositExchange: centralExchage,
-        withdrawalExchange: exchange
-    });
-//}
-
-
-//privateGetAssetV3PrivateTransferInterTransferListQuery
-//'asset/v3/private/transfer/inter-transfer/list/query'
-//const response = await this.privateGetAssetV3PrivateTransferInterTransferListQuery (this.extend (request, params));
-
-//asset/v3/private/transfer/account-coin/balance/query
-//okx:
-//let response = await exchange.fetchBalance({ instType: 'funding' });
-//bybit:
-//
-
-
-
-//if id and no txId
-//keep looking for 
-
-
+await main();
 
 async function main() {
     while (true) {
         try {
             let currentHour = (new Date()).getUTCHours();
+            let onboardingTime = new Date();
+            onboardingTime.setUTCMilliseconds(0);
+            onboardingTime.setUTCSeconds(0);
+            onboardingTime.setUTCMinutes(0);
+            onboardingTime.setUTCHours(currentHour);
+            let timestamp = onboardingTime.getTime();
 
             let lastTradingHour = (Math.floor(currentHour / settings.fundingHourlyFreq) * settings.fundingHourlyFreq);
             let nextTradingHour = (lastTradingHour + settings.fundingHourlyFreq) % 24;
             let nextOnboardingHour = (24 + (nextTradingHour - settings.onBoardingHours)) % 24;
 
+            //close positions and withdraw funds from trading exchanges into the central exchange
             if (tradingState.fundingHour != nextTradingHour && tradingState.state != 'closed') {
                 let longExchange = exchangeCache[tradingState.long.exchange];
                 let shortExchange = exchangeCache[tradingState.short.exchange];
@@ -154,8 +89,7 @@ async function main() {
                     shortSymbol: tradingState.short.symbol,
                     makerSide: tradingState.makerSide,
                     idealOrderValue: settings.idealOrderValue,
-                    idealBatchSize: settings.idealBatchSize,
-                    trailPct: settings.trailPct
+                    idealBatchSize: settings.idealBatchSize
                 });
 
                 await longExchange.cancelAllOrders(tradingState.long.symbol);
@@ -164,15 +98,52 @@ async function main() {
                 await longExchange.cancelAllOrders(tradingState.long.symbol, { stop: true });
                 await shortExchange.cancelAllOrders(tradingState.short.symbol, { stop: true });
 
-                //todo:withdraw money
+                let longDetails = settings.withdraw[tradingState.long.exchange];
+                let shortDetails = settings.withdraw[tradingState.short.exchange];
+
+                await Promise.all([
+                    withdrawFunds({
+                        address: longDetails.address,
+                        currency: longDetails.currency,
+                        network: longDetails.network,
+                        timestamp,
+                        saveState: async ({ depositId, depositTxId }) => {
+                            tradingState.long.withdrawId = depositId;
+                            tradingState.long.withdrawTxId = depositTxId;
+                            await saveTradeState({ ssm, state: tradingState, tradeStatusKey });
+                        },
+                        depositExchange: centralExchage,
+                        withdrawalExchange: longExchange,
+                        depositId: tradingState.long.withdrawId,
+                        depositTxId: tradingState.long.withdrawTxId
+                    }),
+                    withdrawFunds({
+                        address: shortDetails.address,
+                        currency: shortDetails.currency,
+                        network: shortDetails.network,
+                        timestamp,
+                        saveState: async ({ depositId, depositTxId }) => {
+                            tradingState.short.withdrawId = depositId;
+                            tradingState.short.withdrawTxId = depositTxId;
+                            await saveTradeState({ ssm, state: tradingState, tradeStatusKey });
+                        },
+                        depositExchange: centralExchage,
+                        withdrawalExchange: shortExchange,
+                        depositId: tradingState.short.withdrawId,
+                        depositTxId: tradingState.short.withdrawTxId
+                    })]);
 
                 tradingState.state = 'closed';
                 await saveTradeState({ ssm, state: tradingState, tradeStatusKey });
             }
 
+            //calculate the best trading pairs and settings for the next trade run
             if (tradingState.state == 'closed' && currentHour >= nextOnboardingHour) {
 
-                //todo:get investmentFundsAvailable from the balance of the common trading account
+                let centralCurrency = settings.withdraw[centralExchangeKey].currency;
+                let centralBalance = await centralExchage.fetchBalance({ type: centralExchage.options.fundingAccount });
+                let investmentFundsAvailable = (centralBalance[centralCurrency]?.free || 0);
+
                 let investmentAmount = investmentFundsAvailable * settings.investmentMargin;
                 let investment = investmentAmount * settings.initialMargin;
 
@@ -191,8 +162,8 @@ async function main() {
                 let longExchange = exchangeCache[bestPair.longExchange];
                 let shortExchange = exchangeCache[bestPair.shortExchange];
 
-                let longRate = (await longExchange.fetchOHLCV(bestPair.longSymbol, undefined, undefined, 1))[0][4];
-                let shortRate = (await shortExchange.fetchOHLCV(bestPair.shortSymbol, undefined, undefined, 1))[0][4];
+                let longRate = (await longExchange.fetchOrderBook(bestPair.longSymbol, longExchange.options.fetchOrderBookLimit)).bids[0][0];
+                let shortRate = (await shortExchange.fetchOrderBook(bestPair.shortSymbol, shortExchange.options.fetchOrderBookLimit)).asks[0][0];
 
                 let longMarket = longExchange.market(bestPair.longSymbol);
                 let shortMarket = shortExchange.market(bestPair.shortSymbol);
@@ -226,20 +197,61 @@ async function main() {
                 await saveTradeState({ ssm, state: tradingState, tradeStatusKey });
             }
 
+            //deposit from the central exchange into all the trading exchanges and open positions 
             if (tradingState.state == 'open' && tradingState.fundingHour == nextTradingHour) {
                 let longExchange = exchangeCache[tradingState.long.exchange];
                 let shortExchange = exchangeCache[tradingState.short.exchange];
 
-                //todo:deposit amount
-                //first check if there is a deposit en route
-                //if there is wait for it to arrive
-                //if not make a deposit
-                let exchange = longExchange;
-                let symbol = tradingState.long.symbol;
+                let longDetails = settings.deposit[tradingState.long.exchange];
+                let shortDetails = settings.deposit[tradingState.short.exchange];
 
-                // let rate = (await exchange.fetchOHLCV(symbol, undefined, undefined, 1))[0][4];
-                // let requiredLiquidity = (tradingState.targetSize * rate * tradingState.leverage) / settings.initialMargin;
-                //place deposit information
+                let longRate = (await longExchange.fetchOrderBook(tradingState.long.symbol, longExchange.options.fetchOrderBookLimit)).bids[0][0];
+                let shortRate = (await shortExchange.fetchOrderBook(tradingState.short.symbol, shortExchange.options.fetchOrderBookLimit)).asks[0][0];
+
+                let longDepositAmount = (tradingState.targetSize * longRate) / (tradingState.leverage * settings.initialMargin);
+                let shortDepositAmount = (tradingState.targetSize * shortRate) / (tradingState.leverage * settings.initialMargin);
+
+                await Promise.all([
+                    withdrawFunds({
+                        address: longDetails.address,
+                        currency: longDetails.currency,
+                        network: longDetails.network,
+                        timestamp,
+                        saveState: async ({ depositId, depositTxId }) => {
+                            tradingState.long.depositId = depositId;
+                            tradingState.long.depositTxId = depositTxId;
+                            await saveTradeState({ ssm, state: tradingState, tradeStatusKey });
+                        },
+                        depositExchange: longExchange,
+                        withdrawalExchange: centralExchage,
+                        depositId: tradingState.long.depositId,
+                        depositTxId: tradingState.long.depositTxId,
+                        depositAmount: longDepositAmount
+                    }),
+                    withdrawFunds({
+                        address: shortDetails.address,
+                        currency: shortDetails.currency,
+                        network: shortDetails.network,
+                        timestamp,
+                        saveState: async ({ depositId, depositTxId }) => {
+                            tradingState.short.depositId = depositId;
+                            tradingState.short.depositTxId = depositTxId;
+                            await saveTradeState({ ssm, state: tradingState, tradeStatusKey });
+                        },
+                        depositExchange: centralExchage,
+                        withdrawalExchange: shortExchange,
+                        depositId: tradingState.short.depositId,
+                        depositTxId: tradingState.short.depositTxId,
+                        depositAmount: shortDepositAmount
+                    })]);
+
+                let longBalace = await longExchange.fetchBalance({ type: longExchange.options.fundingAccount });
+                let longFunding = (longBalace[longDetails.currency]?.free || 0) - (longExchange.options.leaveBehind || 1);
+                if (longFunding > 0) await longExchange.transfer(longDetails.currency, longFunding, longExchange.options.fundingAccount, longExchange.options.tradingAccount);
+
+                let shortBalace = await shortExchange.fetchBalance({ type: shortExchange.options.fundingAccount });
+                let shortFunding = (shortBalace[shortDetails.currency]?.free || 0) - (shortExchange.options.leaveBehind || 1);
+                if (shortFunding > 0) await shortExchange.transfer(shortDetails.currency, shortFunding, shortExchange.options.fundingAccount, shortExchange.options.tradingAccount);
 
                 await (<SetRiskLimitFunction>longExchange.setRiskLimit)(tradingState.long.riskIndex, tradingState.long.symbol);
                 await longExchange.setLeverage(tradingState.long.maxLeverage, tradingState.long.symbol);
@@ -254,7 +266,6 @@ async function main() {
                     shortSymbol: tradingState.short.symbol,
                     makerSide: tradingState.makerSide,
                     targetSize: tradingState.targetSize,
-                    trailPct: settings.trailPct,
                     idealOrderValue: settings.idealOrderValue,
                     idealBatchSize: settings.idealBatchSize
                 });
