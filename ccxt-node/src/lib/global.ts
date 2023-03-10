@@ -1054,6 +1054,8 @@ export async function withdrawFunds({
     saveState: ({ depositId, depositTxId }: { depositId?: string, depositTxId?: string }) => Promise<void>,
     retryLimit?: number
 }) {
+    if (withdrawalExchange.id == depositExchange.id) return;
+
     if (!depositId) {
         let transaction = await findWithdrawalByTime({
             address,
