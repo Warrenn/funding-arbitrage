@@ -1,5 +1,5 @@
 import { FetchOpenStopOrdersFunction, SetRiskLimitFunction } from "./types.js";
-import ccxt, { Order } from 'ccxt';
+import ccxt, { Order, Params, WithdrawalResponse } from 'ccxt';
 
 export class CoinexExchange extends ccxt.pro.coinex {
     private positionIds: { [symbol: string]: string } = {};
@@ -21,6 +21,11 @@ export class CoinexExchange extends ccxt.pro.coinex {
         }
         return position;
     }
+
+    async withdraw(currency: string, amount: number, address: string, tag?: string, params?: Params): Promise<WithdrawalResponse> {
+        if (params?.network) params = { ...params, smart_contract_name: params.network };
+        return await super.withdraw(currency, amount, address, tag, params);
+    };
 
     public async createOrder(symbol: string, type: Order['type'], side: Order['side'], amount: number, price?: number, params?: ccxt.Params): Promise<Order> {
         if (params?.reduceOnly && !params?.positionId) {

@@ -11,11 +11,12 @@ let investmentFundsAvailable = 17000;
 let ssm = new AWS.SSM({ region });
 let exchangeCache = {};
 exchangeCache['binance'] = await exchangeFactory['binance']({ ssm, apiCredentialsKeyPrefix });
-exchangeCache['okx'] = await exchangeFactory['okx']({ ssm, apiCredentialsKeyPrefix });
-exchangeCache['bybit'] = await exchangeFactory['bybit']({ ssm, apiCredentialsKeyPrefix });
+// exchangeCache['okx'] = await exchangeFactory['okx']({ ssm, apiCredentialsKeyPrefix });
+// exchangeCache['bybit'] = await exchangeFactory['bybit']({ ssm, apiCredentialsKeyPrefix });
 exchangeCache['gate'] = await exchangeFactory['gate']({ ssm, apiCredentialsKeyPrefix });
-exchangeCache['coinex'] = await exchangeFactory['coinex']({ ssm, apiCredentialsKeyPrefix });
+//exchangeCache['coinex'] = await exchangeFactory['coinex']({ ssm, apiCredentialsKeyPrefix });
 let referenceData = JSON.parse(await fs.promises.readFile(path.resolve(refDataFile), { encoding: 'utf8' }));
+//todo:Get Gate to use AVAX instead of BEP20 for the withdrawals
 let settings = await getSettings({ ssm, settingsPrefix });
 let tradingState = await getTradeState({ ssm, tradeStatusKey });
 let fundingsRatePipeline = [];
@@ -26,49 +27,48 @@ if (apiCredentialsKeyPrefix.match(/\/dev\//))
 //HACK:remove dev work here
 let centralExchangeKey = settings.centralExchange;
 let centralExchage = exchangeCache[centralExchangeKey];
-let onboardingHour = 1; //(new Date()).getUTCHours();
+let onboardingHour = (new Date()).getUTCHours();
 let depositAmount = 20;
-let ignore = ['binance'];
+let ignore = ['binance', 'okx', 'bybit', 'gate', 'coinex'];
 let keys = Object.keys(exchangeCache);
-for (let i = 0; i < keys.length; i++) {
-    let key = keys[i];
-    if (ignore.indexOf(key) > -1)
-        continue;
-    let exchange = exchangeCache[key];
-    let address = settings.deposit[key].address;
-    let currency = settings.deposit[key].currency;
-    let network = settings.deposit[key].network;
-    //perform the deposit into accounts
-    let onboardingTime = new Date();
-    onboardingTime.setUTCMilliseconds(0);
-    onboardingTime.setUTCSeconds(0);
-    onboardingTime.setUTCMinutes(0);
-    onboardingTime.setUTCHours(onboardingHour);
-    let timestamp = onboardingTime.getTime();
-    // await withdrawFunds({
-    //     address,
-    //     currency,
-    //     depositAmount,
-    //     network,
-    //     timestamp,
-    //     saveState: async (a) => { },
-    //     depositExchange: exchange,
-    //     withdrawalExchange: centralExchage
-    // });
-    // await exchange.transfer(currency, depositAmount, exchange.options.fundingAccount, exchange.options.tradingAccount);
-    address = settings.withdraw[key].address;
-    currency = settings.withdraw[key].currency;
-    network = settings.withdraw[key].network;
-    await withdrawFunds({
-        address,
-        currency,
-        network,
-        timestamp,
-        saveState: async (a) => { },
-        depositExchange: centralExchage,
-        withdrawalExchange: exchange
-    });
-}
+//for (let i = 0; i < keys.length; i++) {
+let key = 'gate'; //keys[i];
+//if (ignore.indexOf(key) > -1) continue;
+let exchange = exchangeCache[key];
+let address = settings.deposit[key].address;
+let currency = settings.deposit[key].currency;
+let network = settings.deposit[key].network;
+//perform the deposit into accounts
+let onboardingTime = new Date();
+onboardingTime.setUTCMilliseconds(0);
+onboardingTime.setUTCSeconds(0);
+onboardingTime.setUTCMinutes(0);
+onboardingTime.setUTCHours(onboardingHour);
+let timestamp = onboardingTime.getTime();
+// await withdrawFunds({
+//     address,
+//     currency,
+//     depositAmount,
+//     network,
+//     timestamp,
+//     saveState: async (a) => { },
+//     depositExchange: exchange,
+//     withdrawalExchange: centralExchage
+// });
+// await exchange.transfer(currency, depositAmount, exchange.options.fundingAccount, exchange.options.tradingAccount);
+address = settings.withdraw[key].address;
+currency = settings.withdraw[key].currency;
+network = settings.withdraw[key].network;
+await withdrawFunds({
+    address,
+    currency,
+    network,
+    timestamp,
+    saveState: async (a) => { },
+    depositExchange: centralExchage,
+    withdrawalExchange: exchange
+});
+//}
 //privateGetAssetV3PrivateTransferInterTransferListQuery
 //'asset/v3/private/transfer/inter-transfer/list/query'
 //const response = await this.privateGetAssetV3PrivateTransferInterTransferListQuery (this.extend (request, params));

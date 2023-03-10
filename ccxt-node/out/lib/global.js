@@ -721,25 +721,28 @@ export async function withdrawFunds({ address, currency, timestamp, network, dep
     if (!depositTxId && !depositId) {
         let fundingBalace = await withdrawalExchange.fetchBalance({ type: withdrawalExchange.options.fundingAccount });
         let availableInFunding = ((_a = fundingBalace[currency]) === null || _a === void 0 ? void 0 : _a.free) || 0;
+        let leaveBehind = (withdrawalExchange.options.leaveBehind || 1);
         let tradingBalance = await withdrawalExchange.fetchBalance({ type: withdrawalExchange.options.tradingAccount });
         let availableInTrading = ((_b = tradingBalance[currency]) === null || _b === void 0 ? void 0 : _b.free) || 0;
-        if (!depositAmount && availableInTrading) {
+        availableInTrading = (Math.floor(availableInTrading * 100) / 100) - leaveBehind;
+        if (!depositAmount && availableInTrading > 0) {
             await withdrawalExchange.transfer(currency, availableInTrading, withdrawalExchange.options.tradingAccount, withdrawalExchange.options.fundingAccount);
         }
         if (depositAmount && availableInFunding < depositAmount) {
-            let transferAmount = depositAmount - availableInFunding;
+            let transferAmount = Math.floor((depositAmount - availableInFunding) * 100) / 100;
             if (availableInTrading < transferAmount)
                 throw `Not enough funds available ${currency} ${depositAmount} in ${withdrawalExchange.id}`;
             await withdrawalExchange.transfer(currency, transferAmount, withdrawalExchange.options.tradingAccount, withdrawalExchange.options.fundingAccount);
         }
         if (!depositAmount)
-            depositAmount = (availableInFunding + availableInTrading) - (withdrawalExchange.options.leaveBehind || 1);
+            depositAmount = (availableInFunding + availableInTrading) - leaveBehind;
         if (depositAmount <= 0)
             throw `Not enough funds available in ${withdrawalExchange.id}`;
         let params = { network };
         if (withdrawalExchange.options.withdrawalFee) {
             params['fee'] = withdrawalExchange.options.withdrawalFee;
         }
+        depositAmount = Math.floor(depositAmount * 100) / 100;
         let transactionResult = await withdrawalExchange.withdraw(currency, depositAmount, address, undefined, params);
         depositId = transactionResult.id;
         await saveState({ depositId, depositTxId });

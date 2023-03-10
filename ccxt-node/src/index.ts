@@ -62,19 +62,18 @@ fundingsRatePipeline.push(coinGlassLink);
 if (apiCredentialsKeyPrefix.match(/\/dev\//)) fundingsRatePipeline.push(sandBoxFundingRateLink);
 
 //HACK:remove dev work here
-
 let centralExchangeKey = settings.centralExchange;
 let centralExchage = exchangeCache[centralExchangeKey];
-let onboardingHour = 1;//(new Date()).getUTCHours();
+let onboardingHour = (new Date()).getUTCHours();
 let depositAmount = 20;
 
-let ignore: string[] = ['binance', 'okx'];
+let ignore: string[] = ['binance', 'okx', 'bybit', 'gate', 'coinex'];
 let keys = Object.keys(exchangeCache);
 
 
-for (let i = 0; i < keys.length; i++) {
-    let key = keys[i];
-    if (ignore.indexOf(key) > -1) continue;
+//for (let i = 0; i < keys.length; i++) {
+    let key = 'gate';//keys[i];
+    //if (ignore.indexOf(key) > -1) continue;
 
     let exchange = exchangeCache[key];
     let address = settings.deposit[key].address;
@@ -89,18 +88,18 @@ for (let i = 0; i < keys.length; i++) {
     onboardingTime.setUTCHours(onboardingHour);
     let timestamp = onboardingTime.getTime();
 
-    await withdrawFunds({
-        address,
-        currency,
-        depositAmount,
-        network,
-        timestamp,
-        saveState: async (a) => { },
-        depositExchange: exchange,
-        withdrawalExchange: centralExchage
-    });
+    // await withdrawFunds({
+    //     address,
+    //     currency,
+    //     depositAmount,
+    //     network,
+    //     timestamp,
+    //     saveState: async (a) => { },
+    //     depositExchange: exchange,
+    //     withdrawalExchange: centralExchage
+    // });
 
-    await exchange.transfer(currency, depositAmount, exchange.options.fundingAccount, exchange.options.tradingAccount);
+    // await exchange.transfer(currency, depositAmount, exchange.options.fundingAccount, exchange.options.tradingAccount);
 
     address = settings.withdraw[key].address;
     currency = settings.withdraw[key].currency;
@@ -115,7 +114,7 @@ for (let i = 0; i < keys.length; i++) {
         depositExchange: centralExchage,
         withdrawalExchange: exchange
     });
-}
+//}
 
 
 //privateGetAssetV3PrivateTransferInterTransferListQuery

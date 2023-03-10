@@ -27,6 +27,12 @@ export class CoinexExchange extends ccxt.pro.coinex {
         }
         return position;
     }
+    async withdraw(currency, amount, address, tag, params) {
+        if (params === null || params === void 0 ? void 0 : params.network)
+            params = Object.assign(Object.assign({}, params), { smart_contract_name: params.network });
+        return await super.withdraw(currency, amount, address, tag, params);
+    }
+    ;
     async createOrder(symbol, type, side, amount, price, params) {
         if ((params === null || params === void 0 ? void 0 : params.reduceOnly) && !(params === null || params === void 0 ? void 0 : params.positionId)) {
             if (!(symbol in this.positionIds))
