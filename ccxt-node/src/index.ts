@@ -172,7 +172,7 @@ async function main() {
                 let centralCurrency = settings.withdraw[centralExchangeKey].currency;
                 let centralBalance = await centralExchage.fetchBalance({ type: centralExchage.options.fundingAccount });
                 let investmentFundsAvailable = (centralBalance[centralCurrency]?.free || 0);
-                
+
                 //HACK:Must be removed only set for testing
                 investmentFundsAvailable = 300;
 
@@ -242,6 +242,7 @@ async function main() {
 
                 let longDepositAmount = (tradingState.targetSize * longRate) / (tradingState.leverage * settings.initialMargin);
                 let shortDepositAmount = (tradingState.targetSize * shortRate) / (tradingState.leverage * settings.initialMargin);
+                console.log(`${(new Date()).toUTCString()}:opening position long:${longExchange.id}:${longDepositAmount} short:${shortExchange.id}:${shortDepositAmount}`);
 
                 await Promise.all([
                     withdrawFunds({
@@ -279,11 +280,17 @@ async function main() {
 
                 let longBalace = await longExchange.fetchBalance({ type: longExchange.options.fundingAccount });
                 let longFunding = (longBalace[longDetails.currency]?.free || 0) - (longExchange.options.leaveBehind || 1);
-                if (longFunding > 0) await longExchange.transfer(longDetails.currency, longFunding, longExchange.options.fundingAccount, longExchange.options.tradingAccount);
+                if (longFunding > 0) {
+                    console.log(`transfering balance for ${longExchange.id} from ${longExchange.options.fundingAccount} to ${longExchange.options.tradingAccount}`)
+                    await longExchange.transfer(longDetails.currency, longFunding, longExchange.options.fundingAccount, longExchange.options.tradingAccount);
+                }
 
                 let shortBalace = await shortExchange.fetchBalance({ type: shortExchange.options.fundingAccount });
                 let shortFunding = (shortBalace[shortDetails.currency]?.free || 0) - (shortExchange.options.leaveBehind || 1);
-                if (shortFunding > 0) await shortExchange.transfer(shortDetails.currency, shortFunding, shortExchange.options.fundingAccount, shortExchange.options.tradingAccount);
+                if (shortFunding > 0) {
+                    console.log(`transfering balance for ${shortExchange.id} from ${shortExchange.options.fundingAccount} to ${shortExchange.options.tradingAccount}`)
+                    await shortExchange.transfer(shortDetails.currency, shortFunding, shortExchange.options.fundingAccount, shortExchange.options.tradingAccount);
+                }
 
                 await (<SetRiskLimitFunction>longExchange.setRiskLimit)(tradingState.long.riskIndex, tradingState.long.symbol);
                 await longExchange.setLeverage(tradingState.long.maxLeverage, tradingState.long.symbol);
