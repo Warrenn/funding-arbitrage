@@ -271,7 +271,7 @@ export async function calculateBestRoiTradingPairs({ exchangeCache, investment, 
                     currentPrice = (await exchange.fetchOHLCV(symbol, undefined, undefined, 1))[0][4];
                 }
                 let calculation = calculateMaxLeverage({ investment: investmentInLeg, leverageTiers, contractSize, currentPrice });
-                let maxLeverage = calculation.tier.maxLeverage;
+                let maxLeverage = Math.floor(calculation.tier.maxLeverage * 1000) / 1000;
                 let calculatedLeverage = calculation.calculatedLeverage;
                 let riskIndex = calculation.tier.tier;
                 let coinCalculation = {
