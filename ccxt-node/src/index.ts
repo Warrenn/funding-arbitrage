@@ -61,15 +61,16 @@ let centralExchangeKey = settings.centralExchange;
 let centralExchage = exchangeCache[centralExchangeKey];
 
 //HACK:Needed for testing must remove
-// tradingState.fundingHour = 4;
-// tradingState.state = 'open';
+tradingState.fundingHour = 8;
+tradingState.state = 'closed';
+settings.investmentMargin = 0.9;
 // tradingState.targetSize = 1.2;
-// tradingState.leverage = 10;
+// tradingState.leverage = 50;
 // tradingState.makerSide = 'long';
 // tradingState.long = {
 //     exchange: 'bybit',
 //     maxLeverage: 100,
-//     riskIndex: 200,
+//     riskIndex: 1,
 //     symbol: 'BTC/USDT:USDT'
 // }
 // tradingState.short = {
@@ -88,7 +89,7 @@ async function main() {
         try {
             let currentHour = (new Date()).getUTCHours();
             //HACK:Setting currentHour only for testing must remove
-            // currentHour = tradingState.fundingHour - 1;
+            currentHour = 14;
 
             let onboardingTime = new Date();
             onboardingTime.setUTCMilliseconds(0);
@@ -105,6 +106,7 @@ async function main() {
             if (tradingState.fundingHour != nextTradingHour && tradingState.state != 'closed') {
                 let longExchange = exchangeCache[tradingState.long.exchange];
                 let shortExchange = exchangeCache[tradingState.short.exchange];
+                console.log(`${(new Date()).toUTCString()}:closing positions for long:${longExchange.id} short:${shortExchange.id}`)
 
                 await closePositions({
                     longExchange,
@@ -116,14 +118,13 @@ async function main() {
                     idealBatchSize: settings.idealBatchSize
                 });
 
+                console.log('canceling open orders')
                 await longExchange.cancelAllOrders(tradingState.long.symbol);
                 await shortExchange.cancelAllOrders(tradingState.short.symbol);
 
                 await longExchange.cancelAllOrders(tradingState.long.symbol, { stop: true });
                 await shortExchange.cancelAllOrders(tradingState.short.symbol, { stop: true });
 
-                //HACK:only commented out because of testing
-                
                 let longDetails = settings.withdraw[tradingState.long.exchange];
                 let shortDetails = settings.withdraw[tradingState.short.exchange];
 
@@ -134,6 +135,7 @@ async function main() {
                         network: longDetails.network,
                         timestamp,
                         saveState: async ({ depositId, depositTxId }) => {
+                            console.log(`withdraw saving state for long id:${depositId} and txId:${depositTxId}`)
                             tradingState.long.withdrawId = depositId;
                             tradingState.long.withdrawTxId = depositTxId;
                             await saveTradeState({ ssm, state: tradingState, tradeStatusKey });
@@ -149,6 +151,7 @@ async function main() {
                         network: shortDetails.network,
                         timestamp,
                         saveState: async ({ depositId, depositTxId }) => {
+                            console.log(`withdraw saving state for short id:${depositId} and txId:${depositTxId}`)
                             tradingState.short.withdrawId = depositId;
                             tradingState.short.withdrawTxId = depositTxId;
                             await saveTradeState({ ssm, state: tradingState, tradeStatusKey });
@@ -169,6 +172,9 @@ async function main() {
                 let centralCurrency = settings.withdraw[centralExchangeKey].currency;
                 let centralBalance = await centralExchage.fetchBalance({ type: centralExchage.options.fundingAccount });
                 let investmentFundsAvailable = (centralBalance[centralCurrency]?.free || 0);
+                
+                //HACK:Must be removed only set for testing
+                investmentFundsAvailable = 300;
 
                 let investmentAmount = investmentFundsAvailable * settings.investmentMargin;
                 let investment = investmentAmount * settings.initialMargin;
@@ -228,7 +234,6 @@ async function main() {
                 let longExchange = exchangeCache[tradingState.long.exchange];
                 let shortExchange = exchangeCache[tradingState.short.exchange];
 
-                //HACK:Only commented out because of testing
                 let longDetails = settings.deposit[tradingState.long.exchange];
                 let shortDetails = settings.deposit[tradingState.short.exchange];
 

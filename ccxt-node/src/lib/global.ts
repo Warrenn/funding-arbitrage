@@ -898,6 +898,8 @@ export async function adjustPositions({
         }
     }
 
+    console.log(`adjust:Adjusting position target:${targetSize}`);
+
     await Promise.all([balanceHedge(), placeOrders()]);
 
     let orders = await makerExchange.fetchOpenOrders(makerSymbol);
@@ -1054,6 +1056,7 @@ export async function withdrawFunds({
     saveState: ({ depositId, depositTxId }: { depositId?: string, depositTxId?: string }) => Promise<void>,
     retryLimit?: number
 }) {
+    console.log(`withdrawFunds: withdraw ${currency} from ${withdrawalExchange.id} deposit to ${depositExchange.id}`);
     if (withdrawalExchange.id == depositExchange.id) return;
 
     if (!depositId) {
@@ -1068,6 +1071,7 @@ export async function withdrawFunds({
                 id: depositId,
                 txid: depositTxId
             } = transaction);
+            console.log(`withdrawFunds: found transaction in ${withdrawalExchange.id} using timestamp:${timestamp} id:${depositId} txId:${depositTxId}`);
         }
     }
 
@@ -1100,6 +1104,7 @@ export async function withdrawFunds({
 
         depositAmount = Math.floor(depositAmount * 100) / 100;
 
+        console.log(`${(new Date()).toUTCString()}:withdrawFunds: performing withdrawal as no id or txId was found ${currency} ${depositAmount} to: ${address}`);
         let transactionResult = await withdrawalExchange.withdraw(currency, depositAmount, address, undefined, params);
         depositId = transactionResult.id;
         await saveState({ depositId, depositTxId });
@@ -1118,6 +1123,8 @@ export async function withdrawFunds({
                 id: depositId,
                 txid: depositTxId
             } = transaction);
+
+            console.log(`${(new Date()).toUTCString()}:withdrawFunds: found transaction in ${withdrawalExchange.id} using id:${depositId} txId:${depositTxId}`);
         }
         if (depositTxId) {
             await saveState({ depositId, depositTxId });
@@ -1133,6 +1140,8 @@ export async function withdrawFunds({
     retryCount = 0;
     while (true) {
         let transaction = await findDepositByTxId({ exchange: depositExchange, currency, depositTxId });
+        if (transaction)
+            console.log(`${(new Date()).toUTCString()}:withdrawFunds: found deposit transaction in ${depositExchange.id} using txId:${depositTxId}`);
         if (transaction?.status == 'ok')
             break;
         if (!transaction)

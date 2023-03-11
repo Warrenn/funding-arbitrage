@@ -3,7 +3,7 @@ import fs from 'fs';
 import path from 'path';
 import AWS from 'aws-sdk';
 import dotenv from 'dotenv';
-import { closePositions, createSlOrders, createTpOrders, exchangeFactory, getTradeState, openPositions, saveTradeState, calculateBestRoiTradingPairs, processFundingRatesPipeline, getCoinGlassData, sandBoxFundingRateLink, getSettings, withdrawFunds } from './lib/global.js';
+import { closePositions, createSlOrders, createTpOrders, exchangeFactory, getTradeState, openPositions, saveTradeState, calculateBestRoiTradingPairs, processFundingRatesPipeline, getCoinGlassData, sandBoxFundingRateLink, getSettings } from './lib/global.js';
 dotenv.config({ override: true });
 const apiCredentialsKeyPrefix = `${process.env.API_CRED_KEY_PREFIX}`, tradeStatusKey = `${process.env.TRADE_STATUS_KEY}`, coinglassSecretKey = `${process.env.COINGLASS_SECRET_KEY}`, region = `${process.env.CCXT_NODE_REGION}`, refDataFile = `${process.env.REF_DATA_FILE}`, settingsPrefix = `${process.env.SETTINGS_KEY_PREFIX}`;
 let ssm = new AWS.SSM({ region });
@@ -24,32 +24,31 @@ if (apiCredentialsKeyPrefix.match(/\/dev\//))
 let centralExchangeKey = settings.centralExchange;
 let centralExchage = exchangeCache[centralExchangeKey];
 //HACK:Needed for testing must remove
-// tradingState.fundingHour = 4;
-// tradingState.state = 'open';
-// tradingState.targetSize = 1.2;
-// tradingState.leverage = 10;
-// tradingState.makerSide = 'long';
-// tradingState.long = {
-//     exchange: 'bybit',
-//     maxLeverage: 100,
-//     riskIndex: 200,
-//     symbol: 'BTC/USDT:USDT'
-// }
-// tradingState.short = {
-//     exchange: 'binance',
-//     maxLeverage: 100,
-//     riskIndex: 1,
-//     symbol: 'BTC/USDT:USDT'
-// }
-// settings.idealOrderValue = 1000;
+tradingState.fundingHour = 16;
+tradingState.state = 'filled';
+tradingState.targetSize = 1.2;
+tradingState.leverage = 50;
+tradingState.makerSide = 'long';
+tradingState.long = {
+    exchange: 'bybit',
+    maxLeverage: 100,
+    riskIndex: 1,
+    symbol: 'BTC/USDT:USDT'
+};
+tradingState.short = {
+    exchange: 'binance',
+    maxLeverage: 100,
+    riskIndex: 1,
+    symbol: 'BTC/USDT:USDT'
+};
+settings.idealOrderValue = 1000;
 await main();
 async function main() {
-    var _a, _b, _c;
     while (true) {
         try {
             let currentHour = (new Date()).getUTCHours();
             //HACK:Setting currentHour only for testing must remove
-            // currentHour = tradingState.fundingHour - 1;
+            currentHour = 16;
             let onboardingTime = new Date();
             onboardingTime.setUTCMilliseconds(0);
             onboardingTime.setUTCSeconds(0);
@@ -77,8 +76,10 @@ async function main() {
                 await longExchange.cancelAllOrders(tradingState.long.symbol, { stop: true });
                 await shortExchange.cancelAllOrders(tradingState.short.symbol, { stop: true });
                 //HACK:only commented out because of testing
+                /*
                 let longDetails = settings.withdraw[tradingState.long.exchange];
                 let shortDetails = settings.withdraw[tradingState.short.exchange];
+
                 await Promise.all([
                     withdrawFunds({
                         address: longDetails.address,
@@ -109,16 +110,20 @@ async function main() {
                         withdrawalExchange: shortExchange,
                         depositId: tradingState.short.withdrawId,
                         depositTxId: tradingState.short.withdrawTxId
-                    })
-                ]);
+                    })]);*/
                 tradingState.state = 'closed';
                 await saveTradeState({ ssm, state: tradingState, tradeStatusKey });
             }
             //calculate the best trading pairs and settings for the next trade run
             if (tradingState.state == 'closed' && currentHour >= nextOnboardingHour) {
+                //HACK:Only commented because of testing
+                /*
                 let centralCurrency = settings.withdraw[centralExchangeKey].currency;
                 let centralBalance = await centralExchage.fetchBalance({ type: centralExchage.options.fundingAccount });
-                let investmentFundsAvailable = (((_a = centralBalance[centralCurrency]) === null || _a === void 0 ? void 0 : _a.free) || 0);
+                let investmentFundsAvailable = (centralBalance[centralCurrency]?.free || 0);
+                */
+                //HACK:Must be removed only set for settings
+                let investmentFundsAvailable = 3000;
                 let investmentAmount = investmentFundsAvailable * settings.investmentMargin;
                 let investment = investmentAmount * settings.initialMargin;
                 let fundingRates = await processFundingRatesPipeline(fundingsRatePipeline)({ nextFundingHour: nextTradingHour });
@@ -166,12 +171,16 @@ async function main() {
                 let longExchange = exchangeCache[tradingState.long.exchange];
                 let shortExchange = exchangeCache[tradingState.short.exchange];
                 //HACK:Only commented out because of testing
+                /*
                 let longDetails = settings.deposit[tradingState.long.exchange];
                 let shortDetails = settings.deposit[tradingState.short.exchange];
+
                 let longRate = (await longExchange.fetchOrderBook(tradingState.long.symbol, longExchange.options.fetchOrderBookLimit)).bids[0][0];
                 let shortRate = (await shortExchange.fetchOrderBook(tradingState.short.symbol, shortExchange.options.fetchOrderBookLimit)).asks[0][0];
+
                 let longDepositAmount = (tradingState.targetSize * longRate) / (tradingState.leverage * settings.initialMargin);
                 let shortDepositAmount = (tradingState.targetSize * shortRate) / (tradingState.leverage * settings.initialMargin);
+
                 await Promise.all([
                     withdrawFunds({
                         address: longDetails.address,
@@ -204,16 +213,15 @@ async function main() {
                         depositId: tradingState.short.depositId,
                         depositTxId: tradingState.short.depositTxId,
                         depositAmount: shortDepositAmount
-                    })
-                ]);
+                    })]);
+
                 let longBalace = await longExchange.fetchBalance({ type: longExchange.options.fundingAccount });
-                let longFunding = (((_b = longBalace[longDetails.currency]) === null || _b === void 0 ? void 0 : _b.free) || 0) - (longExchange.options.leaveBehind || 1);
-                if (longFunding > 0)
-                    await longExchange.transfer(longDetails.currency, longFunding, longExchange.options.fundingAccount, longExchange.options.tradingAccount);
+                let longFunding = (longBalace[longDetails.currency]?.free || 0) - (longExchange.options.leaveBehind || 1);
+                if (longFunding > 0) await longExchange.transfer(longDetails.currency, longFunding, longExchange.options.fundingAccount, longExchange.options.tradingAccount);
+
                 let shortBalace = await shortExchange.fetchBalance({ type: shortExchange.options.fundingAccount });
-                let shortFunding = (((_c = shortBalace[shortDetails.currency]) === null || _c === void 0 ? void 0 : _c.free) || 0) - (shortExchange.options.leaveBehind || 1);
-                if (shortFunding > 0)
-                    await shortExchange.transfer(shortDetails.currency, shortFunding, shortExchange.options.fundingAccount, shortExchange.options.tradingAccount);
+                let shortFunding = (shortBalace[shortDetails.currency]?.free || 0) - (shortExchange.options.leaveBehind || 1);
+                if (shortFunding > 0) await shortExchange.transfer(shortDetails.currency, shortFunding, shortExchange.options.fundingAccount, shortExchange.options.tradingAccount);*/
                 await longExchange.setRiskLimit(tradingState.long.riskIndex, tradingState.long.symbol);
                 await longExchange.setLeverage(tradingState.long.maxLeverage, tradingState.long.symbol);
                 await shortExchange.setRiskLimit(tradingState.short.riskIndex, tradingState.short.symbol);
