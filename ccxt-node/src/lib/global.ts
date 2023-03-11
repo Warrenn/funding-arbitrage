@@ -961,7 +961,7 @@ async function correctPosition({
         maxSize: maxSize,
         orderSize: diff
     });
-    let side = positionSize > targetSize ? increaseOrderSide : decreaseOrderSide;
+    let side = positionSize > targetSize ? decreaseOrderSide : increaseOrderSide;
     console.log(`correctPosition:correcting position for ${symbol} in ${exchange.id} from ${positionSize} to ${targetSize} by doing a ${side}`);
     await createImmediateOrder({ exchange, side, size, symbol });
 }
