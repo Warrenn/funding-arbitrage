@@ -59,7 +59,7 @@ async function main() {
             let lastTradingHour = (Math.floor(currentHour / settings.fundingHourlyFreq) * settings.fundingHourlyFreq);
             let nextTradingHour = (lastTradingHour + settings.fundingHourlyFreq) % 24;
             let nextOnboardingHour = (24 + (nextTradingHour - settings.onBoardingHours)) % 24;
-            //close positions and withdraw funds from trading exchanges into the central exchange
+            //close positions then withdraw funds from trading exchanges and deposit into the central exchange
             if (tradingState.fundingHour != nextTradingHour && tradingState.state != 'closed') {
                 let longExchange = exchangeCache[tradingState.long.exchange];
                 let shortExchange = exchangeCache[tradingState.short.exchange];
@@ -119,8 +119,6 @@ async function main() {
                 let centralCurrency = settings.withdraw[centralExchangeKey].currency;
                 let centralBalance = await centralExchage.fetchBalance({ type: centralExchage.options.fundingAccount });
                 let investmentFundsAvailable = (((_a = centralBalance[centralCurrency]) === null || _a === void 0 ? void 0 : _a.free) || 0);
-                //HACK:only for testing
-                investmentFundsAvailable = 500;
                 let investmentAmount = investmentFundsAvailable * settings.investmentMargin;
                 let investment = investmentAmount * settings.initialMargin;
                 let fundingRates = await processFundingRatesPipeline(fundingsRatePipeline)({ nextFundingHour: nextTradingHour });
@@ -163,7 +161,7 @@ async function main() {
                 tradingState.leverage = bestPair.leverage;
                 await saveTradeState({ ssm, state: tradingState, tradeStatusKey });
             }
-            //deposit from the central exchange into all the trading exchanges and open positions 
+            //widthdraw from the central exchange and deposit into all the trading exchanges then open positions 
             if (tradingState.state == 'open' && tradingState.fundingHour == nextTradingHour) {
                 let longExchange = exchangeCache[tradingState.long.exchange];
                 let shortExchange = exchangeCache[tradingState.short.exchange];

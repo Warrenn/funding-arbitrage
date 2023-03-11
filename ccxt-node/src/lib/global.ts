@@ -56,6 +56,7 @@ export const exchangeFactory: { [key: string]: ExchangeFactory } = {
             enableRateLimit: true,
             options: {
                 fetchOrderBookLimit: 5,
+                'recvWindow': 59999,
                 defaultMarginMode: 'isolated',
                 fundingAccount: 'spot',
                 tradingAccount: 'future',
