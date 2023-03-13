@@ -87,6 +87,7 @@ await main();
 async function main() {
     while (true) {
         try {
+            let logMessage = '';
             let currentHour = (new Date()).getUTCHours();
             //HACK:Setting currentHour only for testing must remove
             currentHour = 14;
@@ -106,7 +107,7 @@ async function main() {
             if (tradingState.fundingHour != nextTradingHour && tradingState.state != 'closed') {
                 let longExchange = exchangeCache[tradingState.long.exchange];
                 let shortExchange = exchangeCache[tradingState.short.exchange];
-                console.log(`${(new Date()).toUTCString()}:closing positions for long:${longExchange.id} short:${shortExchange.id}`)
+                console.log(`closing positions for long:${longExchange.id}(${tradingState.long.symbol}) short:${shortExchange.id}(${tradingState.short.symbol})`)
 
                 await closePositions({
                     longExchange,
@@ -168,6 +169,8 @@ async function main() {
 
             //calculate the best trading pairs and settings for the next trade run
             if (tradingState.state == 'closed' && currentHour >= nextOnboardingHour) {
+                if (!logMessage) logMessage = `${(new Date()).toUTCString()}:calculating next trade for ${nextTradingHour}`
+                if (logMessage) console.log(logMessage);
 
                 let centralCurrency = settings.withdraw[centralExchangeKey].currency;
                 let centralBalance = await centralExchage.fetchBalance({ type: centralExchage.options.fundingAccount });
@@ -187,9 +190,12 @@ async function main() {
                     referenceData
                 });
 
-                if (tradePairs.length == 0) continue;
+                if (tradePairs.length == 0) {
+                    continue;
+                }
 
                 let bestPair = tradePairs[0];
+                console.log(`calculation found for ${nextTradingHour} ${JSON.stringify(bestPair)}`)
 
                 let longExchange = exchangeCache[bestPair.longExchange];
                 let shortExchange = exchangeCache[bestPair.shortExchange];
@@ -205,8 +211,10 @@ async function main() {
 
                 let orderSize = investment / (longRate + shortRate);
 
-                orderSize = Math.floor(orderSize / longPrecision) * longPrecision;
-                orderSize = Math.floor(orderSize / shortPrecision) * shortPrecision;
+                if (longPrecision < 1 && longPrecision > 0) orderSize = Math.floor(orderSize / longPrecision) * longPrecision;
+                if (shortPrecision < 1 && shortPrecision > 0) orderSize = Math.floor(orderSize / shortPrecision) * shortPrecision;
+                if (longPrecision > 1) orderSize = Math.floor(orderSize * longPrecision) / longPrecision;
+                if (shortPrecision > 1) orderSize = Math.floor(orderSize * shortPrecision) / shortPrecision;
 
                 tradingState.fundingHour = nextTradingHour;
                 tradingState.long = {
@@ -242,7 +250,7 @@ async function main() {
 
                 let longDepositAmount = (tradingState.targetSize * longRate) / (tradingState.leverage * settings.initialMargin);
                 let shortDepositAmount = (tradingState.targetSize * shortRate) / (tradingState.leverage * settings.initialMargin);
-                console.log(`${(new Date()).toUTCString()}:opening position long:${longExchange.id}:${longDepositAmount} short:${shortExchange.id}:${shortDepositAmount}`);
+                console.log(`${(new Date()).toUTCString()}:withdrawing funds and opening positions ${tradingState.targetSize} long:${longExchange.id}(${tradingState.long.symbol}) $${longDepositAmount} short:${shortExchange.id}(${tradingState.short.symbol}) $${shortDepositAmount}`);
 
                 await Promise.all([
                     withdrawFunds({

@@ -567,6 +567,7 @@ export async function createSlOrders({
 
     let longPositionSize = Math.abs((longPosition.contracts || 0) * longContractSize);
     let shortPositionSize = Math.abs((shortPosition.contracts || 0) * shortContractSize);
+    console.log(`Creating the Stop Loss orders for long:${longExchange.id}(${longSymbol}) ${longPositionSize} and short:${shortExchange.id}(${shortSymbol}) ${shortPositionSize}`);
 
     let liquidationPrice = await calculateLiquidationPrice({ exchange: longExchange, position: longPosition, market: longExchange.market(longSymbol) });
     let price = liquidationPrice * (1 + limit);
@@ -620,6 +621,7 @@ export async function createTpOrders({
 
     let liquidationPriceShort = await calculateLiquidationPrice({ exchange: shortExchange, position: shortPosition, market: shortExchange.market(shortSymbol) });
     let entryDiff = longPosition.entryPrice - shortPosition.entryPrice;
+    console.log(`Creating the Take Profit orders for long:${longExchange.id}(${longSymbol}) ${longPositionSize} and short:${shortExchange.id}(${shortSymbol}) ${shortPositionSize}`);
 
     let maxLong = +liquidationPriceShort + entryDiff;
     let price = maxLong * (1 - limit);
@@ -898,7 +900,7 @@ export async function adjustPositions({
         }
     }
 
-    console.log(`adjust:Adjusting position target:${targetSize}`);
+    console.log(`adjust:Adjusting position target:${targetSize} for maker:${makerExchange.id}(${makerSymbol}) and taker:${takerExchange.id}(${takerSymbol})`);
 
     await Promise.all([balanceHedge(), placeOrders()]);
 
