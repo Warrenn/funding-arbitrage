@@ -1149,14 +1149,16 @@ export async function withdrawFunds({
             exchange: withdrawalExchange,
             depositId
         });
-        if (transaction && !logged) {
+        if (transaction) {
             ({
                 id: depositId,
                 txid: depositTxId
             } = transaction);
 
-            console.log(`${(new Date()).toUTCString()}:withdrawFunds: found transaction for ${depositAmount} in ${withdrawalExchange.id} using id:${depositId} txId:${depositTxId} ${transaction.status}`);
-            logged = true;
+            if (!logged) {
+                console.log(`${(new Date()).toUTCString()}:withdrawFunds: found transaction for ${depositAmount} in ${withdrawalExchange.id} using id:${depositId} txId:${depositTxId} ${transaction.status}`);
+                logged = true;
+            }
         }
         if (depositTxId) {
             await saveState({ depositId, depositTxId });
