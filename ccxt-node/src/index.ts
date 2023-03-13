@@ -67,8 +67,6 @@ async function main() {
         try {
             let logMessage = '';
             let currentHour = (new Date()).getUTCHours();
-            //HACK:Setting currentHour only for testing must remove
-            currentHour = 16;
 
             let onboardingTime = new Date();
             onboardingTime.setUTCMilliseconds(0);
