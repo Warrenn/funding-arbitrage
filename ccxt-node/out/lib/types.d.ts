@@ -21,6 +21,7 @@ export declare type TransferDetails = {
     };
 };
 export declare type Settings = {
+    minThreshold: number;
     investmentMargin: number;
     initialMargin: number;
     tpSlLimit: number;

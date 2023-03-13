@@ -1,4 +1,4 @@
-import { exchangeFactory, getCoinGlassData } from "./lib/global.js";
+import { exchangeFactory } from "./lib/global.js";
 import fs from 'fs';
 import AWS from 'aws-sdk';
 import dotenv from 'dotenv';
@@ -12,11 +12,12 @@ exchangeCache['bybit'] = await exchangeFactory['bybit']({ ssm, apiCredentialsKey
 exchangeCache['gate'] = await exchangeFactory['gate']({ ssm, apiCredentialsKeyPrefix });
 exchangeCache['coinex'] = await exchangeFactory['coinex']({ ssm, apiCredentialsKeyPrefix });
 let refData = {};
-let coinGlassLink = await getCoinGlassData({ ssm, coinglassSecretKey });
-let fundingRates = await coinGlassLink({}, 0);
-let coins = Object.keys(fundingRates);
-// let bybitTiers: { [key: string]: LeverageTier[] } = {};
-// let markets = exchangeCache["bybit"].markets;
+// let coinGlassLink = await getCoinGlassData({ ssm, coinglassSecretKey });
+// let fundingRates = await coinGlassLink({}, 0);
+let coins = JSON.parse(await fs.promises.readFile('./symbols.json', { encoding: 'utf8' }));
+;
+let bybitTiers = {};
+let markets = exchangeCache["bybit"].markets;
 // for (let i = 0; i < coins.length; i++) {
 //     let coin = coins[i];
 //     let symbol = `${coin}/USDT:USDT`;
@@ -24,7 +25,7 @@ let coins = Object.keys(fundingRates);
 //     let tiers = await exchangeCache['bybit'].fetchMarketLeverageTiers(symbol);
 //     bybitTiers[symbol] = tiers;
 // }
-// await fs.promises.writeFile('./bybit2.leverageTiers.json', JSON.stringify(bybitTiers, undefined, 3), { encoding: 'utf8' });
+// await fs.promises.writeFile('./bybit.leverageTiers.json', JSON.stringify(bybitTiers, undefined, 3), { encoding: 'utf8' });
 let fees = {
     "binance": { makerFee: 0.0002, takerFee: 0.0004, type: 'quote' },
     "bybit": { makerFee: 0.0001, takerFee: 0.0006, type: 'quote' },
@@ -42,53 +43,79 @@ riskLevels["bybit"] = await loadTiers("bybit");
 riskLevels["coinex"] = await loadTiers("coinex");
 riskLevels["gate"] = await loadTiers("gate");
 riskLevels["okx"] = await loadTiers("okx");
-let gateRiskLevels = riskLevels["gate"];
-let gateKeys = Object.keys(gateRiskLevels);
-for (let i = 0; i < gateKeys.length; i++) {
-    let coin = gateKeys[i];
-    let gTiers = gateRiskLevels[coin];
-    for (let ii = 0; ii < gTiers.length; ii++) {
-        let gTier = gTiers[ii];
-        gTier.tier = gTier.maxNotional;
-    }
-}
-let content = JSON.stringify(gateRiskLevels, undefined, 3);
-await fs.promises.writeFile('./gate.leverageTiers.json', content, { encoding: 'utf8' });
+// let gateRiskLevels = riskLevels["gate"];
+// let gateKeys = Object.keys(gateRiskLevels);
+// for (let i = 0; i < gateKeys.length; i++) {
+//     let coin = gateKeys[i];
+//     let gTiers = gateRiskLevels[coin];
+//     for (let ii = 0; ii < gTiers.length; ii++) {
+//         let gTier = gTiers[ii];
+//         gTier.tier = gTier.maxNotional;
+//     }
+// }
+// let content = JSON.stringify(gateRiskLevels, undefined, 3);
+// await fs.promises.writeFile('./gate.leverageTiers.json', content, { encoding: 'utf8' });
+exchangeCache['binance'].options.defaultType = 'swap';
+exchangeCache['gate'].options.defaultType = 'swap';
 for (let coinIndex = 0; coinIndex < coins.length; coinIndex++) {
     let coin = coins[coinIndex];
     refData[coin] = {};
-    let exchanges = Object.keys(fundingRates[coin]);
+    let exchanges = Object.keys(exchangeCache);
     for (let exchangeIndex = 0; exchangeIndex < exchanges.length; exchangeIndex++) {
         let exchangeName = exchanges[exchangeIndex];
         if (!(exchangeName in riskLevels))
             continue;
-        refData[coin][exchangeName] = {};
+        let expair = {};
         let exchange = exchangeCache[exchangeName];
-        let pairs = Object.keys(fundingRates[coin][exchangeName]);
+        let pairs = [`${coin}/USDT:USDT`];
         for (let pairIndex = 0; pairIndex < pairs.length; pairIndex++) {
+            let pair = pairs[pairIndex];
+            if (!(pair in exchangeCache[exchangeName].markets))
+                continue;
+            let levels = riskLevels[exchangeName][pair] || [];
+            if (levels.length == 0) {
+                try {
+                    levels = await exchangeCache[exchangeName].fetchMarketLeverageTiers(`${coin}/USDT:USDT`);
+                }
+                catch (err) {
+                    console.error(err);
+                }
+                if ((levels === null || levels === void 0 ? void 0 : levels.length) < 1) {
+                    console.log(`${exchangeName} ${coin}`);
+                    continue;
+                }
+            }
+            let contractSize = undefined;
             try {
-                let pair = pairs[pairIndex];
-                console.log(exchangeName + ':' + pair);
-                let levels = riskLevels[exchangeName][pair];
                 let market = exchange.market(pair);
-                refData[coin][exchangeName][pair] = {
-                    takerFee: fees[exchangeName].takerFee,
-                    makerFee: fees[exchangeName].makerFee,
-                    riskLevels: {
-                        levels: levels,
-                        type: fees[exchangeName].type,
-                        contractSize: market.contractSize
-                    },
-                };
+                contractSize = market.contractSize;
             }
             catch (err) {
+                console.log(`No market for ${exchange.id} ${pair}`);
                 console.error(err);
+                throw err;
             }
+            if (!contractSize) {
+                console.log(`Contract Size error ${exchange.id} ${pair}`);
+                contractSize = 1;
+            }
+            expair[pair] = {
+                takerFee: fees[exchangeName].takerFee,
+                makerFee: fees[exchangeName].makerFee,
+                riskLevels: {
+                    levels: levels,
+                    type: fees[exchangeName].type,
+                    contractSize
+                },
+            };
         }
+        if ((Object.keys(expair)).length > 0)
+            refData[coin][exchangeName] = expair;
     }
 }
 let refString = JSON.stringify(refData, undefined, 3);
-await fs.promises.writeFile('./refData.json', refString, { encoding: 'utf8' });
+await fs.promises.writeFile('./reference-data.json', refString, { encoding: 'utf8' });
+console.log('done');
 //long placement maker and short taker
 //short placement maker and long taker
 //set leverage

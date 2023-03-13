@@ -27,9 +27,10 @@ export declare const exchangeFactory: {
     [key: string]: ExchangeFactory;
 };
 export declare function sandBoxFundingRateLink(fundingRates: FundingRates, nextFundingHour: number): Promise<FundingRates>;
-export declare function getCoinGlassData({ ssm, coinglassSecretKey }: {
+export declare function getCoinGlassData({ ssm, coinglassSecretKey, fundingThreshold }: {
     ssm: AWS.SSM;
     coinglassSecretKey: string;
+    fundingThreshold?: number;
 }): Promise<FundingRatesChainFunction>;
 export declare function calculateRoi({ calculation1, calculation2, investment }: {
     calculation1: FundingRateCalculation;

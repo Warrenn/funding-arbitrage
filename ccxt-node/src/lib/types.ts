@@ -23,6 +23,7 @@ export type TransferDetails = {
 }
 
 export type Settings = {
+    minThreshold: number,
     investmentMargin: number,
     initialMargin: number,
     tpSlLimit: number,

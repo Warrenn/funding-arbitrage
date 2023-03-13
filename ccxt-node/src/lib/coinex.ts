@@ -4,13 +4,6 @@ import ccxt, { Order, Params, WithdrawalResponse } from 'ccxt';
 export class CoinexExchange extends ccxt.pro.coinex {
     private positionIds: { [symbol: string]: string } = {};
 
-    public market(symbol: string): ccxt.Market {
-        let market = super.market(symbol);
-        //TODO:Must figure out a better way to get the max order limit
-        if (!market.limits.amount?.max) market.limits.amount = { max: 9999, min: market.limits.amount?.min };
-        return market;
-    }
-
     public async fetchPosition(symbol: string, params?: ccxt.Params | undefined): Promise<any> {
         let position = await super.fetchPosition(symbol, params);
         if (position.contracts == undefined && !!position.contractSize) {

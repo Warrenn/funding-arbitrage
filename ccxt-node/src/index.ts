@@ -53,34 +53,12 @@ let settings: Settings = await getSettings({ ssm, settingsPrefix });
 let tradingState: TradeState = await getTradeState({ ssm, tradeStatusKey });
 
 let fundingsRatePipeline: FundingRatesChainFunction[] = [];
-let coinGlassLink = await getCoinGlassData({ ssm, coinglassSecretKey });
+let coinGlassLink = await getCoinGlassData({ ssm, coinglassSecretKey, fundingThreshold: 0.06 });
 fundingsRatePipeline.push(coinGlassLink);
 if (apiCredentialsKeyPrefix.match(/\/dev\//)) fundingsRatePipeline.push(sandBoxFundingRateLink);
 
 let centralExchangeKey = settings.centralExchange;
 let centralExchage = exchangeCache[centralExchangeKey];
-
-//HACK:Needed for testing must remove
-tradingState.fundingHour = 8;
-tradingState.state = 'closed';
-settings.investmentMargin = 0.9;
-// tradingState.targetSize = 1.2;
-// tradingState.leverage = 50;
-// tradingState.makerSide = 'long';
-// tradingState.long = {
-//     exchange: 'bybit',
-//     maxLeverage: 100,
-//     riskIndex: 1,
-//     symbol: 'BTC/USDT:USDT'
-// }
-// tradingState.short = {
-//     exchange: 'binance',
-//     maxLeverage: 100,
-//     riskIndex: 1,
-//     symbol: 'BTC/USDT:USDT'
-// }
-// settings.idealOrderValue = 1000;
-
 
 await main();
 
@@ -90,7 +68,7 @@ async function main() {
             let logMessage = '';
             let currentHour = (new Date()).getUTCHours();
             //HACK:Setting currentHour only for testing must remove
-            currentHour = 14;
+            currentHour = 16;
 
             let onboardingTime = new Date();
             onboardingTime.setUTCMilliseconds(0);
@@ -169,15 +147,12 @@ async function main() {
 
             //calculate the best trading pairs and settings for the next trade run
             if (tradingState.state == 'closed' && currentHour >= nextOnboardingHour) {
-                if (!logMessage) logMessage = `${(new Date()).toUTCString()}:calculating next trade for ${nextTradingHour}`
+                if (!logMessage) logMessage = `calculating next trade for ${nextTradingHour}`
                 if (logMessage) console.log(logMessage);
 
                 let centralCurrency = settings.withdraw[centralExchangeKey].currency;
                 let centralBalance = await centralExchage.fetchBalance({ type: centralExchage.options.fundingAccount });
                 let investmentFundsAvailable = (centralBalance[centralCurrency]?.free || 0);
-
-                //HACK:Must be removed only set for testing
-                investmentFundsAvailable = 300;
 
                 let investmentAmount = investmentFundsAvailable * settings.investmentMargin;
                 let investment = investmentAmount * settings.initialMargin;
@@ -187,7 +162,8 @@ async function main() {
                     fundingRates,
                     exchangeCache,
                     investment,
-                    referenceData
+                    referenceData,
+                    minThreshold: settings.minThreshold
                 });
 
                 if (tradePairs.length == 0) {
@@ -195,6 +171,7 @@ async function main() {
                 }
 
                 let bestPair = tradePairs[0];
+                logMessage = '';
                 console.log(`calculation found for ${nextTradingHour} ${JSON.stringify(bestPair)}`)
 
                 let longExchange = exchangeCache[bestPair.longExchange];
@@ -209,12 +186,12 @@ async function main() {
                 let longPrecision = longMarket.precision.amount || 1;
                 let shortPrecision = shortMarket.precision.amount || 1;
 
-                let orderSize = investment / (longRate + shortRate);
+                let orderSize = (investment / (longRate + shortRate)) * bestPair.leverage;
 
-                if (longPrecision < 1 && longPrecision > 0) orderSize = Math.floor(orderSize / longPrecision) * longPrecision;
-                if (shortPrecision < 1 && shortPrecision > 0) orderSize = Math.floor(orderSize / shortPrecision) * shortPrecision;
-                if (longPrecision > 1) orderSize = Math.floor(orderSize * longPrecision) / longPrecision;
-                if (shortPrecision > 1) orderSize = Math.floor(orderSize * shortPrecision) / shortPrecision;
+                if (longPrecision <= 1 && longPrecision > 0) orderSize = Math.floor(orderSize / longPrecision) * longPrecision;
+                if (shortPrecision <= 1 && shortPrecision > 0) orderSize = Math.floor(orderSize / shortPrecision) * shortPrecision;
+                if (longPrecision >= 1) orderSize = Math.floor(orderSize * longPrecision) / longPrecision;
+                if (shortPrecision >= 1) orderSize = Math.floor(orderSize * shortPrecision) / shortPrecision;
 
                 tradingState.fundingHour = nextTradingHour;
                 tradingState.long = {
@@ -250,7 +227,7 @@ async function main() {
 
                 let longDepositAmount = (tradingState.targetSize * longRate) / (tradingState.leverage * settings.initialMargin);
                 let shortDepositAmount = (tradingState.targetSize * shortRate) / (tradingState.leverage * settings.initialMargin);
-                console.log(`${(new Date()).toUTCString()}:withdrawing funds and opening positions ${tradingState.targetSize} long:${longExchange.id}(${tradingState.long.symbol}) $${longDepositAmount} short:${shortExchange.id}(${tradingState.short.symbol}) $${shortDepositAmount}`);
+                console.log(`withdrawing funds and opening positions ${tradingState.targetSize} long:${longExchange.id}(${tradingState.long.symbol}) $${longDepositAmount} short:${shortExchange.id}(${tradingState.short.symbol}) $${shortDepositAmount}`);
 
                 await Promise.all([
                     withdrawFunds({
@@ -259,6 +236,7 @@ async function main() {
                         network: longDetails.network,
                         timestamp,
                         saveState: async ({ depositId, depositTxId }) => {
+                            console.log(`deposit saving state for long id:${depositId} and txId:${depositTxId}`)
                             tradingState.long.depositId = depositId;
                             tradingState.long.depositTxId = depositTxId;
                             await saveTradeState({ ssm, state: tradingState, tradeStatusKey });
@@ -275,28 +253,29 @@ async function main() {
                         network: shortDetails.network,
                         timestamp,
                         saveState: async ({ depositId, depositTxId }) => {
+                            console.log(`deposit saving state for short id:${depositId} and txId:${depositTxId}`)
                             tradingState.short.depositId = depositId;
                             tradingState.short.depositTxId = depositTxId;
                             await saveTradeState({ ssm, state: tradingState, tradeStatusKey });
                         },
-                        depositExchange: centralExchage,
-                        withdrawalExchange: shortExchange,
+                        depositExchange: shortExchange,
+                        withdrawalExchange: centralExchage,
                         depositId: tradingState.short.depositId,
                         depositTxId: tradingState.short.depositTxId,
                         depositAmount: shortDepositAmount
                     })]);
 
                 let longBalace = await longExchange.fetchBalance({ type: longExchange.options.fundingAccount });
-                let longFunding = (longBalace[longDetails.currency]?.free || 0) - (longExchange.options.leaveBehind || 1);
+                let longFunding = Math.floor(((longBalace[longDetails.currency]?.free || 0) - (longExchange.options.leaveBehind || 1)) * 100) / 100;
                 if (longFunding > 0) {
-                    console.log(`transfering balance for ${longExchange.id} from ${longExchange.options.fundingAccount} to ${longExchange.options.tradingAccount}`)
+                    console.log(`transfering balance ${longFunding} for ${longExchange.id} from ${longExchange.options.fundingAccount} to ${longExchange.options.tradingAccount}`)
                     await longExchange.transfer(longDetails.currency, longFunding, longExchange.options.fundingAccount, longExchange.options.tradingAccount);
                 }
 
                 let shortBalace = await shortExchange.fetchBalance({ type: shortExchange.options.fundingAccount });
-                let shortFunding = (shortBalace[shortDetails.currency]?.free || 0) - (shortExchange.options.leaveBehind || 1);
+                let shortFunding = Math.floor(((shortBalace[shortDetails.currency]?.free || 0) - (shortExchange.options.leaveBehind || 1)) * 100) / 100;
                 if (shortFunding > 0) {
-                    console.log(`transfering balance for ${shortExchange.id} from ${shortExchange.options.fundingAccount} to ${shortExchange.options.tradingAccount}`)
+                    console.log(`transfering balance ${shortFunding} for ${shortExchange.id} from ${shortExchange.options.fundingAccount} to ${shortExchange.options.tradingAccount}`)
                     await shortExchange.transfer(shortDetails.currency, shortFunding, shortExchange.options.fundingAccount, shortExchange.options.tradingAccount);
                 }
 
